@@ -55,8 +55,8 @@ mode, and notation on every note event.
 
 ## The harmony stack (the interesting part)
 
-There are **four** separate music-theory engines. They are not redundant; they
-answer different questions. Know which one you're touching.
+There are four music-theory files, but only **three are live**. Know which one
+you're touching — and note that `voicing.js` is not in the running path at all.
 
 1. **Recognition** — `app.js`. `CHORD_PATTERNS` + `findBestChord()` score every
    pitch class as a candidate root against ~60 interval patterns. The 5th is
@@ -78,18 +78,31 @@ answer different questions. Know which one you're touching.
    the **spice dial** (0 basic / 1 colorful / 2 complex) only widens which
    extensions the engine *volunteers*. This is what compose mode uses.
 
-4. **Voicing (idiom modes)** — `voicing.js`. `QUALITY` table encodes jazz rules:
-   no natural 4 on maj/dom (use ♯11), drop the 5th on dominants, clusters go
-   rootless, guide tones always present. `voiceLead()` pins common tones at
-   *exact* pitch (zero motion) then does exhaustive minimal-motion matching for
-   the rest, returning `{held, moved, appeared, released}`.
+4. **`voicing.js` — DEAD CODE.** All 510 lines are unreachable except
+   `nearestOctave()`, a 9-line helper called once from [suggest.js:225](src/renderer/suggest.js:225).
+   Its `QUALITY` table, the four arrange modes (closed/open/cluster/minimal),
+   and `voiceLead()` — which pins common tones at *exact* pitch and does
+   exhaustive minimal-motion matching — are never invoked by anything. It is the
+   best voice-leader in the codebase and it has never run. Verified by grep:
+   `window.Voicing` appears exactly once outside its own file.
 
-That mapping shape is the contract compose mode relies on to light the keyboard:
+Compose mode lights the keyboard from a `{held, moved, appeared, released}`
+mapping:
 - **blue** = held, keep these down
-- **gold** = press these (new + arrival of moving voices)
-- **grey** = lift these
+- **gold** = press these (`appeared` + arrival of `moved` voices)
+- **grey** = lift these (`released` + departure of `moved` voices)
 - **amber arrows** over the keyboard = a voice gliding from → to
 - **green flash** = you played it right
+
+That mapping is produced by `suggest.js` `voiceCandidate()`, which has two
+paths, and **neither fills all four buckets**:
+- reharm/slip candidates build `held`/`moved`/`released` inline; `appeared`
+  stays empty.
+- everything else goes through `ENG.voiceLeadFrom()` → `toMapping()`, which
+  hardcodes `appeared: []` and `released: []`.
+
+So `appeared` is never populated by any path, and `released` only on a minority
+of branches. See Known bugs.
 
 ## Compose mode
 
@@ -122,11 +135,36 @@ The staff shows the last 4 chords (`STAFF_WINDOW`), one chord per measure in
 - CSP in `index.html` is strict (`default-src 'self'`). No CDN scripts —
   vendored libs only.
 
+## Known bugs
+
+**Compose mode lights too few keys (~5.5% of branches).**
+[engine.js:121](src/renderer/engine.js:121) — when `voiceLeadFrom()` judges its
+result `muddy()`, it discards the voice-led version and returns the freshly
+generated voicing with a mapping of **exactly one pair** (bass → bass). Every
+upper voice vanishes from the mapping, so compose mode lights one key for a
+four-note chord, and `checkComposeMatch()` demands exact set equality — so the
+chord can never be completed. Measured over 6300 branches seeded with realistic
+close / shell / rootless voicings: 345 branches broken, **all** of them this
+collapse. Concentrated in the Shadow slot (141) and in close/rootless voicings,
+i.e. what a jazz player actually plays. Example: play `Cmaj7` as `C3 E3 G3 B3`,
+pick Shadow → `Am7`; you must play `A2 C4 G4 B4` but only `A2` lights.
+
+**Paint layers fight each other (~9.7% of branches).**
+`app.js` keeps three independent highlight sets (`suggestionKeys`,
+`heldSuggestionKeys`, `releasedKeys`) with three `clear*` functions whose
+restore logic disagrees about which other layer wins. `clearSuggestionKeys()`
+restores to the default gradient without checking the other two, so clearing
+gold also wipes blue and grey. `compose.js` `selectBranch()` calls them in a
+fixed order (`setSuggestionKeys` → `setHeldKeys` → `setReleasedKeys`), so
+whenever a key is both a `moved.to` and some other voice's `moved.from` — 9.7%
+of branches — grey paints over gold and the key reads as "lift" when it should
+read "press".
+
 ## Known gaps
 
-- **`src/renderer/sounds/Samples/` is empty.** `audio.js` expects 80 Rhodes
-  samples (`{note}-{p|mp|mf|f}.wav`, one every 3 semitones A0–A5). The Sound
-  toggle will spin on "Loading…" forever until those land.
+- **`src/renderer/sounds/Samples/` is empty in the exported zip only** — Jared
+  has the 80 Rhodes samples locally (`{note}-{p|mp|mf|f}.wav`, one every 3
+  semitones A0–A5); they were stripped for size. Audio works on his machine.
 - No tests, no linter.
 - `npm audit` reports vulnerabilities in the electron-builder dev chain; they
   don't affect the shipped app.

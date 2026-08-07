@@ -5,7 +5,12 @@
       "Bash(unzip -q \"/Users/jared/Desktop/Voice_Me.zip\" -d .)",
       "Bash(npm --version)",
       "Bash(npm approve-scripts *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(node probe.js)",
+      "Bash(node sweep.js)",
+      "Bash(node sweep2.js)",
+      "Bash(git add *)",
+      "Bash(git -c user.name=\"Jared\" -c user.email=\"jaredsilversteindrums@gmail.com\" commit -qm \"Correct CLAUDE.md: voicing.js is dead code; document compose-mode key-lighting bugs\")"
     ]
   }
 }

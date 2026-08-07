@@ -986,31 +986,31 @@
       out.push({ root: pc(root + iv), q: quality, reason, slot, family: 'functional' });
 
     if (isMajQ(q)) {
-      add(7,  '7',    'V — dominant',                'home');
-      add(5,  'maj7', 'IV — subdominant',            'lift');
-      add(2,  'm7',   'ii',                          'lift');
-      add(9,  'm7',   'vi — deceptive / rel. minor', 'shadow');
-      add(4,  'm7',   'iii',                         'shadow');
+      add(7,  '7',    'V — dominant',                'cadence');
+      add(5,  'maj7', 'IV — subdominant',            'ascending');
+      add(2,  'm7',   'ii',                          'ascending');
+      add(9,  'm7',   'vi — deceptive / rel. minor', 'descending');
+      add(4,  'm7',   'iii',                         'descending');
     } else if (isMinQ(q)) {
-      add(5,  'm7',   'iv',                            'home');
-      add(3,  'maj7', 'III — relative major',          'lift');
-      add(7,  '7',    'V — dominant (harmonic minor)', 'home');
-      add(8,  'maj7', 'VI',                            'shadow');
-      add(10, '7',    '♭VII',                          'shadow');
-      add(5,  '7',    `treat as ii → V7 (pulls to ${noteName(root - 2, false)})`, 'far');
+      add(5,  'm7',   'iv',                            'cadence');
+      add(3,  'maj7', 'III — relative major',          'ascending');
+      add(7,  '7',    'V — dominant (harmonic minor)', 'cadence');
+      add(8,  'maj7', 'VI',                            'descending');
+      add(10, '7',    '♭VII',                          'descending');
+      add(5,  '7',    `treat as ii → V7 (pulls to ${noteName(root - 2, false)})`, 'colour');
     } else if (q === 'm7b5') {
-      add(5,  '7alt', 'ii°–V: here is its V',   'home');
-      add(-2, 'm7',   'resolves toward i',      'shadow');
-      add(3,  'maj7', '♭III of the implied key','lift');
+      add(5,  '7alt', 'ii°–V: here is its V',   'cadence');
+      add(-2, 'm7',   'resolves toward i',      'descending');
+      add(3,  'maj7', '♭III of the implied key','ascending');
     } else if (q === 'dim7' || q === 'dim') {
-      add(1,  'maj7', 'resolves up a ½-step',             'home');
-      add(1,  '7',    'resolves up a ½-step → dominant',  'lift');
-      add(-2, 'm7',   'resolves down a whole-step',       'shadow');
-      add(-1, '7',    'passing dim → dominant a ½ below', 'slide');
+      add(1,  'maj7', 'resolves up a ½-step',             'cadence');
+      add(1,  '7',    'resolves up a ½-step → dominant',  'ascending');
+      add(-2, 'm7',   'resolves down a whole-step',       'descending');
+      add(-1, '7',    'passing dim → dominant a ½ below', 'secondary');
     } else if (isDomQ(q)) {
-      add(5,  'maj7', 'V→I resolution',        'home');
-      add(5,  'm7',   'V→i resolution',        'home');
-      add(2,  'm7',   'deceptive → vi region', 'shadow');
+      add(5,  'maj7', 'V→I resolution',        'cadence');
+      add(5,  'm7',   'V→i resolution',        'cadence');
+      add(2,  'm7',   'deceptive → vi region', 'descending');
     }
     return out;
   }
@@ -1018,9 +1018,9 @@
   function chromaticBassCandidates(root, q) {
     if (!isMajQ(q)) return [];
     return [
-      { root, q: 'maj7', bassPc: pc(root + 11), slot: 'slide', family: 'chromatic',
+      { root, q: 'maj7', bassPc: pc(root + 11), slot: 'secondary', family: 'chromatic',
         reason: `chromatic bass ${noteName(root, false)}→${noteName(root + 11, false)} (maj7 in bass)` },
-      { root, q: '7', bassPc: pc(root + 10), slot: 'slide', family: 'chromatic',
+      { root, q: '7', bassPc: pc(root + 10), slot: 'secondary', family: 'chromatic',
         reason: `line cliché → ${noteName(root, false)}7/${noteName(root + 10, false)} (♭7 in bass)` },
     ];
   }
@@ -1063,7 +1063,7 @@
       seen.add(key);
       const held = base.filter(p => !path.some(m => m.fromPc === p));
       const kind = moves.length === 1 ? 'reharm' : 'slip';
-      const slot = isDomQ(named.q) ? 'far' : (moves.length === 2 ? 'slide' : 'far');
+      const slot = isDomQ(named.q) ? 'colour' : (moves.length === 2 ? 'secondary' : 'colour');
       out.push({
         root: named.root, q: named.q, slot, family: 'reharm',
         reason: `${kind}: ${path.map(m => noteName(m.fromPc, false) + (m.dir < 0 ? '↓' : '↑')).join(' ')} → ` +
@@ -1082,7 +1082,7 @@
 
   function tritoneCandidates(root, q) {
     if (!isDomQ(q)) return [];
-    return [{ root: pc(root + 6), q: '7', slot: 'far', family: 'distant',
+    return [{ root: pc(root + 6), q: '7', slot: 'colour', family: 'distant',
       reason: `tritone sub (${noteName(root, false)}${q} ↔ ${noteName(root + 6, false)}7)` }];
   }
 
@@ -1093,7 +1093,7 @@
     return def.core
       .filter(([iv, role]) => role !== 'root')
       .map(([iv, role]) => ({
-        root, q: quality, bassPc: pc(root + iv), slot: 'slide', family: 'inversion',
+        root, q: quality, bassPc: pc(root + iv), slot: 'secondary', family: 'inversion',
         reason: `${noteName(root, false)}${quality}/${noteName(root + iv, false)} — ${role} in the bass`,
       }));
   }
@@ -1228,12 +1228,15 @@
     return { ...cand, voiced, motion, idiom, pull, bass, score };
   }
 
+  // The five branches are functional categories, not decorative names. Each
+  // branch DISPLAYS its device's own title and roman-numeral motion; these
+  // labels are only the category heading.
   const SLOTS = [
-    { slot: 'home',   label: 'Home'   },
-    { slot: 'lift',   label: 'Lift'   },
-    { slot: 'shadow', label: 'Shadow' },
-    { slot: 'slide',  label: 'Slide'  },
-    { slot: 'far',    label: 'Far'    },
+    { slot: 'cadence',    label: 'Cadence'    },
+    { slot: 'ascending',  label: 'Rising bass' },
+    { slot: 'descending', label: 'Falling bass' },
+    { slot: 'secondary',  label: 'Secondary dominant' },
+    { slot: 'colour',     label: 'Colour'     },
   ];
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1263,21 +1266,34 @@
   const DEVICES = [
     // ── SHADOW: descending bass ──────────────────────────────────────────
     {
-      id: 'maj7-in-bass', slot: 'shadow', label: 'Walk down',
+      id: 'one-to-six-passing-bass', slot: 'descending', weight: 2,
+      label: 'One to six, passing bass',
+      roman: 'I → I/♮7 → vi',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: c.root, quality: majSeventhOf(c.quality), bassPc: pc(c.root + 11) },
+        { rootPC: pc(c.root + 9), quality: 'm7' },
+      ],
+      why:    c => `the bass walks down the scale ${noteName(c.root, false)}→${noteName(c.root + 11, false)}→` +
+                   `${noteName(c.root + 9, false)} — the 7th is a passing tone, not a chord change`,
+    },
+    {
+      id: 'seventh-in-bass', slot: 'descending', weight: 0,
+      label: 'Seventh in the bass',
       roman: 'I → I/♮7',
       applies: c => isMajorish(c.quality),
       chords: c => [{ rootPC: c.root, quality: majSeventhOf(c.quality), bassPc: pc(c.root + 11) }],
       why:    c => `the bass slips down a half step, ${noteName(c.root, false)}→${noteName(c.root + 11, false)}`,
     },
     {
-      id: 'minor-line-cliche', slot: 'shadow', label: 'Line cliché',
+      id: 'minor-line-cliche', slot: 'descending', label: 'Minor line cliché',
       roman: 'i → i(maj7)/♮7',
       applies: c => isMinorish(c.quality),
       chords: c => [{ rootPC: c.root, quality: 'mMaj7', bassPc: pc(c.root + 11) }],
       why:    c => `the minor line cliché — the bass walks ${noteName(c.root, false)}→${noteName(c.root + 11, false)}`,
     },
     {
-      id: 'backdoor-prep', slot: 'shadow', label: 'Down to IV',
+      id: 'backdoor-prep', slot: 'descending', label: 'Down to four',
       roman: 'I → I7/♭7 → IV',
       applies: c => isMajorish(c.quality),
       chords: c => [
@@ -1289,7 +1305,7 @@
 
     // ── LIFT: ascending bass ─────────────────────────────────────────────
     {
-      id: 'passing-dim-up', slot: 'lift', label: 'Passing ♯i°7',
+      id: 'passing-dim-up', slot: 'ascending', label: 'One to two, passing diminished',
       roman: 'I → ♯i°7 → ii',
       applies: c => isMajorish(c.quality),
       chords: c => [
@@ -1299,7 +1315,7 @@
       why:    c => `the bass climbs ${noteName(c.root, false)}→${noteName(c.root + 1, false)}→${noteName(c.root + 2, false)}`,
     },
     {
-      id: 'V7-of-ii-inverted', slot: 'lift', label: 'V7/ii',
+      id: 'V7-of-ii-inverted', slot: 'ascending', label: 'Two through its own dominant',
       roman: 'I → V7/ii → ii',
       applies: c => isMajorish(c.quality),
       chords: c => [
@@ -1309,7 +1325,25 @@
       why:    c => `a secondary dominant with its 3rd in the bass — ${noteName(c.root, false)}→${noteName(c.root + 1, false)}→${noteName(c.root + 2, false)}`,
     },
     {
-      id: 'modal-oscillation-up', slot: 'lift', label: 'Modal shift',
+      // C6/G → A♭dim7 → C6/A. The harmony never leaves C6; the bass climbs
+      // G–A♭–A underneath it. Only expressible with slash notation, because
+      // the outer chords are the same chord in two different inversions —
+      // which is exactly why a root-position-only engine cannot suggest it.
+      id: 'passing-dim-inversions', slot: 'ascending', weight: 2,
+      label: 'Passing diminished in the bass',
+      roman: 'I/5 → ♭vi°7 → I/6',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: c.root,          quality: '6',    bassPc: pc(c.root + 7) },
+        { rootPC: pc(c.root + 8),  quality: 'dim7'                          },
+        { rootPC: c.root,          quality: '6',    bassPc: pc(c.root + 9) },
+      ],
+      why:    c => `the chord stays put — the bass climbs ${noteName(c.root + 7, false)}→` +
+                   `${noteName(c.root + 8, false)}→${noteName(c.root + 9, false)} underneath it`,
+    },
+    {
+      id: 'modal-oscillation-up', slot: 'ascending',
+      label: 'Modal shift up a step',
       roman: 'I6/9 ⇄ ii11',
       applies: c => isMajorish(c.quality),
       chords: c => [{ rootPC: pc(c.root + 2), quality: 'm11' }],
@@ -1319,7 +1353,7 @@
     // ── Minor-chord devices, so minor harmony gets real moves instead of
     //    falling through to whatever scored well ─────────────────────────
     {
-      id: 'minor-passing-dim-up', slot: 'lift', label: 'Passing °7', weight: 1,
+      id: 'minor-passing-dim-up', slot: 'ascending', label: 'One to two, passing diminished', weight: 1,
       roman: 'i → ♯i°7 → ii',
       applies: c => isMinorish(c.quality),
       chords: c => [
@@ -1329,7 +1363,7 @@
       why:    c => `the bass climbs ${noteName(c.root, false)}→${noteName(c.root + 1, false)}→${noteName(c.root + 2, false)}`,
     },
     {
-      id: 'minor-to-bVII', slot: 'slide', label: '♭VII', weight: 1,
+      id: 'minor-to-bVII', slot: 'secondary', label: 'Backdoor to the relative major', weight: 1,
       roman: 'i → ♭VII7 → ♭III',
       applies: c => isMinorish(c.quality),
       chords: c => [
@@ -1339,7 +1373,7 @@
       why:    c => `the backdoor route to ${noteName(c.root + 3, false)} major`,
     },
     {
-      id: 'minor-half-dim-up', slot: 'lift', label: 'ii ø of the relative', weight: 0,
+      id: 'minor-half-dim-up', slot: 'ascending', label: 'Minor two-five', weight: 0,
       roman: 'i → iiø7 → V7',
       applies: c => isMinorish(c.quality),
       chords: c => [
@@ -1351,14 +1385,14 @@
 
     // ── Sus-chord devices ────────────────────────────────────────────────
     {
-      id: 'sus-bass-down', slot: 'shadow', label: 'sus walk down', weight: 1,
+      id: 'sus-bass-down', slot: 'descending', label: 'Sus with the seventh in the bass', weight: 1,
       roman: 'V7sus4 → V7sus4/♭7',
       applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
       chords: c => [{ rootPC: c.root, quality: '7sus4', bassPc: pc(c.root + 10) }],
       why:    c => `the bass drops to the ♭7, ${noteName(c.root, false)}→${noteName(c.root + 10, false)}`,
     },
     {
-      id: 'sus-up-a-step', slot: 'lift', label: 'sus step up', weight: 1,
+      id: 'sus-up-a-step', slot: 'ascending', label: 'Sus up a whole step', weight: 1,
       roman: 'V7sus4 → ♭VI7sus4',
       applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
       chords: c => [{ rootPC: pc(c.root + 2), quality: '7sus4' }],
@@ -1367,7 +1401,7 @@
 
     // ── SLIDE: secondary dominants and modulation ────────────────────────
     {
-      id: 'V7-of-IV', slot: 'slide', label: 'V7/IV', weight: 3,
+      id: 'V7-of-IV', slot: 'secondary', label: 'One becomes the dominant of four', weight: 3,
       roman: 'I → I7/3 → IV',
       applies: c => isMajorish(c.quality),
       chords: c => [
@@ -1377,7 +1411,7 @@
       why:    c => `becomes the dominant of ${noteName(c.root + 5, false)}, bass rising ${noteName(c.root + 4, false)}→${noteName(c.root + 5, false)}`,
     },
     {
-      id: 'V7-of-V', slot: 'slide', label: 'V7/V', weight: -2,
+      id: 'V7-of-V', slot: 'secondary', label: 'Dominant chain into five', weight: -2,
       roman: 'I → II7 → V7',
       applies: c => isMajorish(c.quality),
       chords: c => [
@@ -1387,7 +1421,7 @@
       why:    c => `a dominant chain into ${noteName(c.root + 7, false)}7`,
     },
     {
-      id: 'V7-of-vi', slot: 'far', label: 'V7/vi', weight: 1,
+      id: 'V7-of-vi', slot: 'colour', label: 'Modulate to the relative minor', weight: 1,
       roman: 'I → V7/vi → vi',
       applies: c => isMajorish(c.quality),
       chords: c => [
@@ -1402,7 +1436,7 @@
     // arrives, the chord resolves. Works as pure colour too — you can sit on
     // the sus and never resolve it, which is most of modal jazz.
     {
-      id: 'sus-then-dominant', slot: 'home', label: 'sus → V7', weight: 2,
+      id: 'sus-then-dominant', slot: 'cadence', label: 'Suspend the five, then release it', weight: 2,
       roman: 'V7sus4 → V7 → I',
       applies: c => isMajorish(c.quality),
       chords: c => [
@@ -1412,7 +1446,7 @@
       why:    c => `${noteName(c.root + 7, false)}sus7 delays the 3rd, then resolves into the dominant`,
     },
     {
-      id: 'sus-release', slot: 'home', label: 'Release the sus', weight: 3,
+      id: 'sus-release', slot: 'cadence', label: 'Release the suspension', weight: 3,
       roman: 'V7sus4 → V7 → I',
       applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
       chords: c => [
@@ -1422,7 +1456,7 @@
       why:    c => `the 4th falls to the 3rd — then it resolves to ${noteName(c.root + 5, false)}`,
     },
     {
-      id: 'sus-hang', slot: 'far', label: 'Stay suspended', weight: 0,
+      id: 'sus-hang', slot: 'colour', label: 'Suspended, unresolved', weight: 0,
       roman: 'V7sus4 (unresolved)',
       applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
       chords: c => [{ rootPC: pc(c.root + 5), quality: '7sus4' }],
@@ -1431,7 +1465,7 @@
 
     // ── HOME: the strongest functional destination ───────────────────────
     {
-      id: 'ii-V', slot: 'home', label: 'ii–V',
+      id: 'ii-V', slot: 'cadence', label: 'Two-five',
       roman: 'ii7 → V7',
       applies: c => isMajorish(c.quality),
       chords: c => [
@@ -1441,21 +1475,21 @@
       why:    () => 'the ii–V that sets up a return home',
     },
     {
-      id: 'V-I', slot: 'home', label: 'V→I',
+      id: 'V-I', slot: 'cadence', label: 'Five to one',
       roman: 'V7 → I',
       applies: c => (QUALITIES[c.quality] || {}).family === 'dominant',
       chords: c => [{ rootPC: pc(c.root + 5), quality: 'maj7' }],
       why:    c => `resolves down a fifth to ${noteName(c.root + 5, false)}`,
     },
     {
-      id: 'minor-iv', slot: 'home', label: 'iv',
+      id: 'minor-iv', slot: 'cadence', label: 'To the minor four',
       roman: 'i → iv',
       applies: c => isMinorish(c.quality),
       chords: c => [{ rootPC: pc(c.root + 5), quality: 'm7' }],
       why:    () => 'the subdominant minor',
     },
     {
-      id: 'half-dim-V', slot: 'home', label: 'iiø–V',
+      id: 'half-dim-V', slot: 'cadence', label: 'Half-diminished two-five',
       roman: 'iiø7 → V7alt',
       applies: c => c.quality === 'm7b5',
       chords: c => [
@@ -1465,7 +1499,7 @@
       why:    c => `the half-diminished ii heading for ${noteName(c.root + 10, false)} minor`,
     },
     {
-      id: 'dim-resolve-up', slot: 'home', label: 'Resolve up ½',
+      id: 'dim-resolve-up', slot: 'cadence', label: 'Diminished resolves up a half step',
       roman: '°7 → I',
       applies: c => (QUALITIES[c.quality] || {}).family === 'dim',
       chords: c => [{ rootPC: pc(c.root + 1), quality: 'maj7' }],
@@ -1474,7 +1508,7 @@
 
     // ── FAR: reharmonisation and non-functional colour ───────────────────
     {
-      id: 'tritone-sub', slot: 'far', label: 'Tritone sub',
+      id: 'tritone-sub', slot: 'colour', label: 'Tritone substitution',
       roman: '♭II7 → I',
       applies: c => (QUALITIES[c.quality] || {}).family === 'dominant',
       chords: c => [
@@ -1484,7 +1518,7 @@
       why:    c => `${noteName(c.root + 6, false)}7 shares its guide tones — same resolution, chromatic bass`,
     },
     {
-      id: 'modal-oscillation-down', slot: 'far', label: 'Modal shift',
+      id: 'modal-oscillation-down', slot: 'colour', label: 'Modal shift down a step',
       roman: 'ii11 → I6/9',
       applies: c => c.quality === 'm11' || c.quality === 'm9' || c.quality === 'm7',
       chords: c => [{ rootPC: pc(c.root + 10), quality: '6/9' }],
@@ -1529,7 +1563,7 @@
         root: id.rootPC,
         q:    id.voiceAs,
         bassPc: pc(moved),
-        slot: 'far',
+        slot: 'colour',
         family: 'sonority',
         device: 'chromatic-sonority',
         roman: '—',
@@ -1655,7 +1689,7 @@
       const r = lead(prevNotes, s.root, s.q, { spice, shape, bassPc: s.bassPc });
       if (!r.notes || r.notes.length < 2) continue;
       (bySlot.far = bySlot.far || []).push({
-        device: { id: s.device, slot: 'far', label: 'Chromatic sonority', roman: s.roman,
+        device: { id: s.device, slot: 'colour', label: 'Chromatic sonority', roman: s.roman,
                   why: () => s.reason },
         sequence: [{ rootPC: s.root, quality: s.q, bassPc: s.bassPc,
                      notes: r.notes, mapping: r.mapping,

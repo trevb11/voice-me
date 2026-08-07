@@ -4,6 +4,7 @@
   "description": "MIDI keyboard visualizer and compositional AI assistant",
   "main": "src/main/main.js",
   "scripts": {
+    "test": "node test/harmony.test.js",
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder --mac",

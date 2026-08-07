@@ -1,0 +1,42 @@
+{
+  "name": "Voice Me",
+  "version": "0.1.0",
+  "description": "MIDI keyboard visualizer and compositional AI assistant",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --mac",
+    "rebuild": "electron-rebuild -f -w midi"
+  },
+  "dependencies": {
+    "midi": "^2.0.0",
+    "tone": "^14.9.17",
+    "vexflow": "^3.0.9"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
+    "electron": "^38.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.voiceme.app",
+    "productName": "Voice Me",
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*"
+    ]
+  },
+  "author": "",
+  "license": "MIT"
+}

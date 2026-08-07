@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; worker-src blob:;" />
+  <title>Voice Me</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+
+  <div id="app">
+
+    <!-- ── Top bar ─────────────────────────────────────────────────── -->
+    <div id="top-bar">
+      <button id="settings-btn" class="icon-btn" title="Settings">⚙</button>
+      <div id="status-bar">
+        <div id="midi-status" class="status-dot disconnected"></div>
+        <span id="midi-label">No MIDI device</span>
+        <select id="port-select" title="MIDI Input">
+          <option value="">— select device —</option>
+        </select>
+        <button id="refresh-btn" title="Refresh MIDI ports">↺</button>
+      </div>
+
+      <!-- Compose with me — centered -->
+      <div id="top-bar-center">
+        <button id="compose-btn" class="compose-btn">✎ Compose with me</button>
+      </div>
+
+      <div id="top-bar-right">
+        <div id="held-notes-wrap">
+          <div id="held-notes"></div>
+        </div>
+        <div id="spice-dial"></div>
+        <button id="audio-toggle-btn" class="toggle-btn">○ Sound</button>
+        <button id="bass-note-btn" class="toggle-btn">Bass Note</button>
+      </div>
+    </div>
+
+    <!-- ── In The Wild banner ─────────────────────────────────────── -->
+    <div id="wild-banner">
+      <span id="wild-text"></span>
+    </div>
+
+   <!-- ── Logo ───────────────────────────────────────────────────── -->
+    <div id="logo-lockup">
+      <span class="logo-v">V</span>oice Me
+    </div>
+
+    <!-- ── Piano ──────────────────────────────────────────────────── -->
+    <main id="piano-container">
+      <svg id="piano" viewBox="0 0 1320 220"
+           preserveAspectRatio="xMidYMid meet"
+           xmlns="http://www.w3.org/2000/svg">
+      </svg>
+    </main>
+
+    <!-- ── Compose area (middle) ────────────────────────────────── -->
+    <div id="compose-area">
+      <!-- Ledger of committed chords — visible only in compose mode -->
+      <div id="compose-trail-outer">
+        <div id="compose-trail"></div>
+        <button id="compose-backspace" title="Remove the last chord (Backspace)">⌫</button>
+      </div>
+
+      <!-- Lower area: tree left, staff right — only visible in compose mode -->
+      <div id="compose-lower">
+        <div id="compose-tree"></div>
+        <div id="compose-status"></div>
+        <div id="notation-area">
+          <div id="notation-staff"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Chord display (moved to bottom, just above panel tab) ──── -->
+    <div id="chord-display">
+      <span id="chord-name">—</span>
+      <span id="chord-type"></span>
+      <span id="chord-alt"></span>
+    </div>
+
+    <!-- ── Panel tab handle ───────────────────────────────────────── -->
+    <div id="panel-tab">
+      <span class="panel-tab-label">Voicing Library</span>
+      <span class="panel-chevron">▲</span>
+    </div>
+
+    <!-- ── Voicing panel ──────────────────────────────────────────── -->
+    <div id="voicing-panel">
+
+      <div id="panel-tabs">
+        <button class="panel-tab-btn active" id="tab-library">Voicing Library</button>
+        <button class="panel-tab-btn" id="tab-progressions">Progressions</button>
+      </div>
+
+      <div id="library-content">
+        <div id="panel-filters">
+          <div id="genre-filters"></div>
+          <div id="pianist-filters"></div>
+        </div>
+        <div id="panel-body">
+          <div id="family-list"></div>
+          <div id="voicing-cards"></div>
+          <div id="voicing-context"></div>
+        </div>
+      </div>
+
+      <div id="prog-content" style="display:none; overflow-y:auto; padding:12px; height:248px;"></div>
+
+    </div>
+
+    <!-- ── Settings panel ─────────────────────────────────────────── -->
+    <div id="settings-panel">
+     <div class="settings-header">
+       <h2>Settings</h2>
+        <button class="settings-close" onclick="VoiceMeSettings.toggleSettings()">✕</button>
+      </div>
+     <div class="settings-section">
+       <div class="settings-section-label">Theme</div>
+        <div id="theme-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="piano.js"></script>
+  <script src="app.js"></script>
+  <script src="voicings.js"></script>
+  <script src="panel.js"></script>
+  <script src="tone.js"></script>
+  <script src="audio.js"></script>
+  <script src="voicing.js"></script>
+  <script src="engine.js"></script>
+  <script src="suggest.js"></script>
+  <script src="compose.js"></script>
+  <script src="settings.js"></script>
+  <script src="vexflow.js"></script>
+  <script src="notation.js"></script>
+</body>
+</html>

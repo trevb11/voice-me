@@ -1,0 +1,1247 @@
+/* ── Reset & base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:            #E1DBBA;
+  --surface:       #D7D1AE;
+  --surface-2:     #CBC49F;
+  --border:        #BEB78F;
+  --text-primary:  #1A180E;
+  --text-muted:    #655E45;
+  --accent:        #A56A3D;
+  --accent-soft:   #C0865A;
+  --accent-pale:   #E9E2CA;
+  --panel-bg:      #E5DFC1;
+  --card-bg:       #EFEBD8;
+  --card-hover:    #F3F0E0;
+  --card-selected: #E9E2CA;
+  --white-key:     #F1EDDC;
+  --black-key:     #746D54;
+
+  --font-ui:   'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', monospace;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ── Status bar ─────────────────────────────────────────────────────────── */
+#status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  -webkit-app-region: no-drag;
+  flex: 1;
+}
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.status-dot.disconnected { background: #BBBBBB; }
+.status-dot.connected {
+  background: #34D399;
+  box-shadow: 0 0 8px #34D39966;
+}
+
+#midi-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+#port-select {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  max-width: 220px;
+}
+#port-select:hover { border-color: var(--accent); }
+
+#refresh-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 14px;
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: color 0.2s, border-color 0.2s;
+}
+#refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ── Top bar right ──────────────────────────────────────────────────────── */
+#top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  -webkit-app-region: no-drag;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+#held-notes {
+  display: flex;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.note-pill {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: var(--accent);
+}
+
+.toggle-btn {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  padding: 4px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+.toggle-btn.active {
+  color: white;
+}
+
+#bass-note-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ── In The Wild banner ─────────────────────────────────────────────────── */
+#wild-banner {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: rgba(17, 17, 17, 0.88);
+  color: white;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  padding: 8px 18px;
+  border-radius: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s;
+  white-space: nowrap;
+  z-index: 200;
+  letter-spacing: 0.04em;
+}
+#wild-banner.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Logo ───────────────────────────────────────────────────────────────── */
+#logo-lockup {
+  font-size: 22px;
+  font-weight: 300;
+  letter-spacing: 0.22em;
+  color: var(--text-primary);
+  margin-top: 14px;
+  margin-bottom: 10px;
+  text-align: center;
+  width: 100%;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+}
+.logo-v {
+  color: var(--text-primary);
+  font-weight: 400;
+  position: relative;
+  display: inline-block;
+}
+.logo-v::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 26px;
+  height: 1px;
+  background: var(--text-primary);
+  transform: rotate(-20deg);
+  transform-origin: left center;
+}
+.logo-v::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: 45%;
+  width: 4px;
+  height: 1.5px;
+  background: var(--bg);
+}
+
+/* ── Piano container ────────────────────────────────────────────────────── */
+#piano-container {
+  width: 100%;
+  max-width: 1200px;
+  padding: 0 24px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+#piano {
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(0 4px 24px rgba(0,0,0,0.10));
+}
+
+/* ── Floating checkmark ─────────────────────────────────────────────────── */
+.float-check {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%) translateY(0);
+  font-size: 28px;
+  color: #22C55E;
+  opacity: 1;
+  pointer-events: none;
+  transition: none;
+  z-index: 50;
+}
+.float-check.rising {
+  transform: translateX(-50%) translateY(-80px);
+  opacity: 0;
+  transition: transform 1.3s cubic-bezier(0.2, 0.8, 0.4, 1),
+              opacity 1.1s ease-out 0.2s;
+}
+
+/* ── Chord display ──────────────────────────────────────────────────────── */
+#chord-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+  margin-bottom: 0;
+  width: 100%;
+  flex-shrink: 0;
+  min-height: 52px;
+}
+
+#chord-name {
+  font-size: 40px;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  min-width: 100px;
+  text-align: center;
+  transition: color 0.15s;
+}
+#chord-type {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+#chord-alt {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* ── Panel tab handle ───────────────────────────────────────────────────── */
+#panel-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 10px 20px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  border-top: 1px solid var(--border);
+  width: 100%;
+  justify-content: center;
+  background: var(--surface);
+  transition: color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+#panel-tab:hover { color: var(--accent); background: var(--surface-2); }
+.panel-chevron { font-size: 10px; transition: transform 0.3s; }
+
+/* ── Voicing panel ──────────────────────────────────────────────────────── */
+#voicing-panel {
+  width: 100%;
+  max-height: 0;
+  overflow: hidden;
+  background: var(--panel-bg);
+  border-top: 1px solid var(--border);
+  transition: max-height 0.38s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+#voicing-panel.open {
+  max-height: 300px;
+}
+
+/* ── Panel filters ──────────────────────────────────────────────────────── */
+#panel-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px 6px;
+  border-bottom: 1px solid var(--border);
+}
+#genre-filters, #pianist-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-btn {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.filter-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+.pianist-btn.active { background: #7C3AED; border-color: #7C3AED; color: white; }
+.pianist-btn:hover { border-color: #7C3AED; color: #7C3AED; }
+
+/* ── Panel body (three columns) ─────────────────────────────────────────── */
+#panel-body {
+  display: grid;
+  grid-template-columns: 200px 1fr 280px;
+  height: 200px;
+  overflow: hidden;
+}
+
+/* ── Left column — Family list ──────────────────────────────────────────── */
+#family-list {
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  padding: 8px 0;
+}
+#family-list::-webkit-scrollbar { width: 4px; }
+#family-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.family-section { margin-bottom: 4px; }
+
+.family-header {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  padding: 8px 14px 4px;
+}
+
+.family-chord-item {
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  border-radius: 0;
+  transition: background 0.1s;
+  font-weight: 400;
+}
+.family-chord-item:hover { background: var(--surface); }
+.family-chord-item.selected {
+  background: var(--accent-pale);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ── Center column — Voicing cards ─────────────────────────────────────── */
+#voicing-cards {
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-right: 1px solid var(--border);
+  padding: 6px;
+}
+#voicing-cards::-webkit-scrollbar { width: 4px; }
+#voicing-cards::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.voicing-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.voicing-card:hover { background: var(--card-hover); border-color: #A0A0B0; }
+.voicing-card.active { background: var(--card-selected); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.voicing-card.played { opacity: 0.85; }
+
+.card-header { margin-bottom: 8px; }
+.card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.card-chord {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.card-pianist {
+  font-size: 10px;
+  background: #EDE9FE;
+  color: #7C3AED;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-family: var(--font-mono);
+}
+.card-played-dot {
+  margin-left: auto;
+  color: #22C55E;
+  font-size: 12px;
+}
+.card-name {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.card-mini-keys {
+  margin: 6px 0;
+  overflow: hidden;
+}
+.card-notes {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tag {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--surface);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.empty-state {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ── Right column — Voicing context ─────────────────────────────────────── */
+#voicing-context {
+  overflow-y: auto;
+  padding: 14px;
+}
+#voicing-context::-webkit-scrollbar { width: 4px; }
+#voicing-context::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.ctx-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.ctx-empty-icon { font-size: 28px; color: var(--border); }
+.ctx-empty-text { font-size: 12px; color: var(--text-muted); text-align: center; line-height: 1.5; }
+
+.ctx-chord { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+.ctx-voicing-name { font-size: 12px; color: var(--text-muted); margin: 2px 0 10px; }
+.ctx-description { font-size: 12px; line-height: 1.65; color: var(--text-primary); margin-bottom: 12px; }
+.ctx-resolves { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+.ctx-resolves-chord { color: var(--accent); font-weight: 500; }
+.ctx-genre-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
+.genre-tag {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.05em;
+  background: var(--accent-pale);
+  color: var(--accent);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.try-it-prompt {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.try-it-keys {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  letter-spacing: 0.06em;
+}
+.try-it-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  animation: pulse-opacity 2s ease-in-out infinite;
+}
+
+@keyframes pulse-opacity {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+/* ── SVG key states ─────────────────────────────────────────────────────── */
+.key-white { transition: fill 0.06s ease-out; cursor: default; }
+.key-black { transition: fill 0.06s ease-out; cursor: default; }
+
+/* ── Panel tabs ──────────────────────────────────────────────────────────── */
+#panel-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.panel-tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 7px 16px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.panel-tab-btn:hover { color: var(--text-primary); }
+.panel-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Progressions home ───────────────────────────────────────────────────── */
+.prog-family-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.prog-family-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.prog-variation-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.prog-variation-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-pale);
+}
+
+/* ── Active progression ──────────────────────────────────────────────────── */
+.prog-active { display: flex; flex-direction: column; gap: 10px; }
+.prog-active-header {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.prog-variation-label {
+  font-size: 11px; font-family: var(--font-mono);
+  color: var(--text-muted); letter-spacing: 0.06em;
+}
+.prog-exit-btn {
+  background: none; border: 1px solid var(--border);
+  color: var(--text-muted); font-size: 10px;
+  padding: 3px 8px; border-radius: 6px; cursor: pointer;
+}
+.prog-exit-btn:hover { color: #ef4444; border-color: #ef4444; }
+
+.prog-key-prompt {
+  font-size: 12px; color: var(--accent); font-family: var(--font-mono);
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+  text-align: center; padding: 4px 0;
+}
+.prog-key-chosen { display: flex; align-items: center; gap: 10px; }
+.prog-key-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.prog-link-btn {
+  background: none; border: none; color: var(--accent);
+  font-size: 11px; cursor: pointer; text-decoration: underline; padding: 0;
+}
+
+/* ── Chord cards ─────────────────────────────────────────────────────────── */
+.prog-chord-row { display: flex; align-items: center; gap: 6px; }
+.prog-chord-card {
+  flex: 1; background-color: var(--card-bg); border: 1.5px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; transition: all 0.2s; opacity: 0.45;
+}
+.prog-chord-card.active {
+  opacity: 1; border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.12);
+}
+.prog-chord-card.completed { opacity: 1; border-color: #22C55E; background: #f0fdf4; }
+.prog-roman {
+  font-size: 9px; font-family: var(--font-mono);
+  color: var(--text-muted); letter-spacing: 0.1em; margin-bottom: 2px;
+}
+.prog-cname { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.prog-cnotes {
+  font-size: 10px; font-family: var(--font-mono);
+  color: var(--accent); letter-spacing: 0.04em; margin-top: 4px;
+}
+.prog-arrow { color: var(--text-muted); font-size: 14px; flex-shrink: 0; }
+
+/* ── Voice leading + status ──────────────────────────────────────────────── */
+.prog-vl {
+  font-size: 11px; color: var(--text-muted);
+  font-family: var(--font-mono); min-height: 16px;
+}
+.vl-label { color: var(--text-primary); font-weight: 500; }
+.vl-notes { color: var(--accent); }
+.prog-status { font-size: 12px; color: var(--text-muted); min-height: 18px; }
+
+#audio-toggle-btn.active {
+  background: #7C3AED;
+  border-color: #7C3AED;
+  color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPOSE MODE STYLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Layout adjustments ─────────────────────────────────────────────────── */
+
+/* Compose area lives between piano and chord display */
+#compose-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 1200px;
+  padding: 8px 24px;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Compose "compose with me" button ────────────────────────────────────── */
+#top-bar-center {
+  position: static;
+  transform: none;
+  flex: 0 0 auto;
+  -webkit-app-region: no-drag;
+}
+
+#top-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 20px 10px 80px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+  position: relative;
+}
+
+.compose-btn {
+  background: linear-gradient(135deg, #DC2626 0%, #7C3AED 100%);
+  border: none;
+  color: white;
+  font-size: 12px;
+  font-family: var(--font-ui);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 6px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.15);
+}
+.compose-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 12px rgba(220, 38, 38, 0.25);
+}
+.compose-btn.active {
+  background: white;
+  color: #DC2626;
+  border: 1.5px solid #DC2626;
+  box-shadow: none;
+}
+
+/* ── Branch nodes ────────────────────────────────────────────────────────── */
+.compose-branch-node {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: center;
+  transform-box: fill-box;
+}
+.compose-branch-node:hover .compose-node-bg {
+  fill: #FFFBEB;
+  stroke-width: 3;
+}
+.compose-branch-node:hover {
+  filter: drop-shadow(0 3px 8px rgba(0,0,0,0.15));
+}
+.compose-branch-node.pending .compose-node-bg {
+  fill: #FEF3C7;
+  stroke-width: 3;
+}
+.compose-branch-node.pending {
+  animation: pending-pulse 1.6s ease-in-out infinite;
+}
+
+/* ── Sheet music paper layer ────────────────────────────────────────────── */
+.sheet-paper {
+  position: absolute;
+  width: 90px;
+  height: 68px;
+  will-change: transform, opacity, left, top;
+  transition: opacity 0.6s;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,0.06));
+}
+.sheet-paper svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Papers behind everything but visible when body is light */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}
+body {
+  background: var(--bg);
+}
+
+/* When compose mode is active, dim papers slightly further so tree stands out */
+body.compose-mode .sheet-paper {
+  opacity: 0.18;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SETTINGS PANEL + THEMES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Gear button ────────────────────────────────────────────────────────── */
+.icon-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 14px;
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: color 0.2s, border-color 0.2s;
+  -webkit-app-region: no-drag;
+  margin-right: 10px;
+}
+.icon-btn:hover { color: var(--text-primary); border-color: var(--text-primary); }
+.icon-btn.active { color: var(--text-primary); border-color: var(--text-primary); background: var(--surface); }
+
+/* ── Settings panel ─────────────────────────────────────────────────────── */
+#settings-panel {
+  position: fixed;
+  top: 60px;
+  left: 24px;
+  width: 320px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  z-index: 300;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+}
+#settings-panel.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-header h2 {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.settings-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.settings-close:hover { color: var(--text-primary); }
+
+.settings-section { padding: 14px 18px; }
+.settings-section-label {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+/* ── Theme option cards ─────────────────────────────────────────────────── */
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  margin-bottom: 6px;
+}
+.theme-option:hover { background: var(--surface); }
+.theme-option.selected {
+  background: var(--accent-pale, rgba(59,130,246,0.08));
+  border-color: var(--accent);
+}
+
+.theme-preview {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+.theme-info { flex: 1; }
+.theme-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.theme-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+/* Preview swatches — each theme's color signature */
+.theme-preview-light {
+  background: linear-gradient(135deg, #E1DBBA 0%, #E1DBBA 55%, #A56A3D 55%, #A56A3D 100%);
+}
+.theme-preview-dark {
+  background: linear-gradient(135deg, #35201A 0%, #35201A 55%, #E2A377 55%, #E2A377 100%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THEMES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── LIGHT (default) — black text on light olive / beige ─────────────────── */
+[data-theme='light'] {
+  --bg:            #E1DBBA;
+  --surface:       #D7D1AE;
+  --surface-2:     #CBC49F;
+  --border:        #BEB78F;
+  --text-primary:  #1A180E;
+  --text-muted:    #655E45;
+  --accent:        #A56A3D;
+  --accent-soft:   #C0865A;
+  --accent-pale:   #E9E2CA;
+  --panel-bg:      #E5DFC1;
+  --card-bg:       #EFEBD8;
+  --card-hover:    #F3F0E0;
+  --card-selected: #E9E2CA;
+  --white-key:     #F1EDDC;
+  --black-key:     #746D54;
+}
+
+/* ── DARK — white text on dark cappuccino ────────────────────────────────── */
+[data-theme='dark'] {
+  --bg:            #35201A;
+  --surface:       #402620;
+  --surface-2:     #4D3128;
+  --border:        #5C4034;
+  --text-primary:  #F7F2E9;
+  --text-muted:    #BAA890;
+  --accent:        #E2A377;
+  --accent-soft:   #EEC29B;
+  --accent-pale:   #4C3128;
+  --panel-bg:      #3B241D;
+  --card-bg:       #482C22;
+  --card-hover:    #55392E;
+  --card-selected: #5C4034;
+  --white-key:     #EFE7D6;
+  --black-key:     #271711;
+}
+
+/* ── Notation / grand staff panel ──────────────────────────────────────── */
+#notation-area {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  overflow: hidden;
+}
+
+/* Hide notation when NOT in compose mode */
+body:not(.compose-mode) #notation-area {
+  display: none;
+}
+#notation-staff {
+  width: 100%;
+  height: 100%;
+}
+#notation-staff svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+body:not(.compose-mode) #compose-lower,
+body:not(.compose-mode) #compose-trail-outer {
+  display: none;
+}
+
+/* ── Compose tree (SVG) ──────────────────────────────────────────────────── */
+
+#compose-tree {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 0;
+  position: relative;
+}
+.compose-tree-svg {
+  width: 100%;
+  height: 100%;
+  max-height: 340px;
+  overflow: visible;
+}
+
+/* ── Stalks are static (no idle sway); they grow in via stroke-dashoffset ─── */
+
+.branch-group {
+  transform-box: fill-box;
+}
+
+/* ── Tip settle: the chord label fades in, its weight bounces the tip, then rests ── */
+
+.branch-tip {
+  transform-origin: center;
+  transition: opacity 0.3s;
+}
+@keyframes tip-settle {
+  0%   { opacity: 0; transform: translateY(-2px); }
+  30%  { opacity: 1; transform: translateY(0);    }
+  50%  {             transform: translateY(7px);  }  /* weight pulls the tip down */
+  70%  {             transform: translateY(-3px); }  /* rebound */
+  85%  {             transform: translateY(1.5px);}
+  100% { opacity: 1; transform: translateY(0);    }  /* rest */
+}
+
+.branch-tip:hover .branch-chord-text {
+  fill: var(--accent);
+  font-weight: 700;
+}
+.branch-tip.pending .branch-chord-text {
+  fill: var(--accent);
+  animation: pending-pulse 1.5s ease-in-out infinite;
+}
+@keyframes pending-pulse {
+  0%, 100% { opacity: 1;   }
+  50%      { opacity: 0.5; }
+}
+
+.branch-tip:hover .branch-label-text,
+.branch-tip.pending .branch-label-text {
+  opacity: 1;
+}
+
+.root-chord-text {
+  opacity: 0.9;
+}
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+
+.compose-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-bottom: 40px;
+  color: var(--text-muted);
+}
+.compose-empty-icon {
+  color: var(--border);
+  font-size: 32px;
+  opacity: 0.4;
+}
+.compose-empty-text {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
+
+/* ── Compose trail ledger (horizontal under piano) ──────────────────────── */
+
+#compose-trail {
+  min-height: 22px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+.trail-chord {
+  background-color: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 10px;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: opacity 0.2s;
+}
+.trail-chord:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  opacity: 0.6;
+  cursor: default;
+}
+.trail-arrow {
+  color: var(--text-muted);
+  font-size: 14px;
+  opacity: 0.5;
+}
+
+/* ── Status ─────────────────────────────────────────────────────────────── */
+
+#compose-status {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  padding-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: Georgia, serif;
+  font-style: italic;
+  text-align: center;
+  padding: 6px 0 2px;
+  min-height: 18px;
+}
+
+/* ── Voicing mode buttons (right side of top bar) ───────────────────────── */
+
+#spice-dial {
+  display: none;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+body.compose-mode #spice-dial {
+  display: inline-flex;
+}
+
+.spice-btn {
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  padding: 4px 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.spice-btn:last-child {
+  border-right: none;
+}
+.spice-btn:hover {
+  color: var(--text-primary);
+}
+.spice-btn.active {
+  background: var(--text-primary);
+  color: var(--bg);
+}
+
+/* ── Leaf falling animation ─────────────────────────────────────────────── */
+
+.compose-leaf {
+  pointer-events: none;
+}
+
+/* Piano stays at the top with its normal size */
+body.compose-mode #piano-container {
+  flex-shrink: 0;
+}
+
+body.compose-mode #logo-lockup {
+  display: none;
+}
+
+/* Compose-status doesn't take up grid space (it's just text) */
+body.compose-mode #compose-status {
+  grid-column: 1 / -1;
+  order: 99;
+  text-align: center;
+  padding: 8px 0;
+}
+
+body.compose-mode #chord-display,
+body.compose-mode #compose-status {
+  display: none !important;
+}
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPOSE MODE — final centering + transparent staff (authoritative overrides)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Content flows from just under the piano downward — never centered (which spilled
+   the trail "ledger" up onto the piano keys when the lower area grew) */
+body.compose-mode #compose-area {
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 24px;
+  justify-content: flex-start;
+}
+
+/* Give the tree enough width (it's height-limited) and the staff a longer column.
+   minmax floors the staff so it stays usable when the window gets narrow. */
+body.compose-mode #compose-lower {
+  flex: 1;
+  display: grid;
+  padding: 12px 0;
+  grid-template-columns: minmax(0, 1.3fr) minmax(340px, 1fr);
+  gap: 28px;
+  min-height: 300px;
+  max-height: 580px;
+}
+
+/* Tree: pushed to the left of its column, vertically centered, larger */
+body.compose-mode #compose-tree {
+  border: none !important;
+  min-height: 300px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 12px;
+}
+body.compose-mode .compose-tree-svg {
+  max-height: 600px;      /* was capped at 340 — let it grow with the taller row */
+}
+
+/* Staff: no card box — transparent staff floating on the app background,
+   sitting to the right and vertically centered (definite height keeps the SVG
+   from collapsing under height:100% children) */
+body.compose-mode #notation-area {
+  width: 100%;
+  max-width: none;
+  position: static;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  height: 320px;
+  max-height: 320px;
+  min-height: 0;
+  align-self: center;
+  justify-self: end;
+}
+
+/* ── Compose: backspace button beside the chord ledger ────────────────────── */
+body.compose-mode #compose-trail-outer {
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 0 8px;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 8px;
+  opacity: 0.75;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+body.compose-mode #compose-trail { flex: 1; }
+#compose-backspace {
+  display: none;
+  flex: 0 0 auto;
+  width: 30px; height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+body.compose-mode #compose-backspace { display: inline-flex; align-items: center; justify-content: center; }
+#compose-backspace:hover { color: var(--text-primary); border-color: var(--text-muted); }
+#compose-backspace:active { background: var(--border); }

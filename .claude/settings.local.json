@@ -15,7 +15,8 @@
       "Bash(git -c user.name=Jared -c user.email=jaredsilversteindrums@gmail.com commit -qm 'Add unified harmony engine with orthogonal spice/shape dials, plus invariant suite *)",
       "Bash(git -c user.name=Jared -c user.email=jaredsilversteindrums@gmail.com commit -qm 'Replace scored suggestions with hard-wired harmonic devices *)",
       "Bash(git -c user.name=Jared -c user.email=jaredsilversteindrums@gmail.com commit -qm 'Wire the harmony engine into the app; delete the three superseded engines *)",
-      "Bash(npm test *)"
+      "Bash(npm test *)",
+      "Bash(echo \"=== the zip you gave me \\(untouched?\\) ===\"; ls -la \"/Users/jared/Desktop/Voice_Me.zip\"; echo; echo \"=== where I worked ===\"; ls -la \"/Users/jared/Voice Me Claude Code\" | head; echo; echo \"=== any OTHER Voice Me / klaviyo copies on this Mac ===\"; find /Users/jared -maxdepth 4 -iname \"klaviyo\" -o -maxdepth 4 -iname \"voice*me*\" -not -path \"*/node_modules/*\" 2>/dev/null | grep -v \"^/Users/jared/Voice Me Claude Code\" | head -20)"
     ]
   }
 }

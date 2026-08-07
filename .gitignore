@@ -2,3 +2,8 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Rhodes samples — 429 MB of audio, kept out of git deliberately.
+# Source of truth is Jared's local copy; the app needs them at
+# src/renderer/sounds/Samples/{note}-{p|mp|mf|f}.wav
+src/renderer/sounds/

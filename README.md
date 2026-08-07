@@ -1,4 +1,4 @@
-# Klaviyo
+# Voice Me
 
 MIDI keyboard visualizer and compositional AI assistant.  
 Built with Electron 38+ for macOS Tahoe (Apple Silicon).
@@ -19,7 +19,6 @@ If not installed, get it from https://nodejs.org (choose the LTS version).
 ### 2. Install dependencies
 
 ```bash
-cd klaviyo
 npm install
 ```
 
@@ -91,26 +90,39 @@ npm run dev
 ## Project structure
 
 ```
-klaviyo/
+.
 ├── src/
 │   ├── main/
 │   │   └── main.js          ← Electron main process, MIDI, IPC
 │   ├── preload/
 │   │   └── preload.js       ← Secure IPC bridge
 │   └── renderer/
-│       ├── index.html       ← App shell
-│       ├── styles.css       ← Dark studio UI
-│       ├── piano.js         ← SVG 88-key keyboard builder
-│       └── app.js           ← MIDI events, lighting, chord detection
+│       ├── index.html       ← App shell (script load order matters)
+│       ├── styles.css       ← Themed UI (light / dark)
+│       ├── piano.js         ← SVG keyboard builder
+│       ├── app.js           ← MIDI events, key lighting, chord recognition
+│       ├── voicings.js      ← Curated voicing library data
+│       ├── panel.js         ← Voicing library + progression trainer drawer
+│       ├── audio.js         ← Rhodes sampler (Tone.js)
+│       ├── voicing.js       ← Voicing modes + voice leading
+│       ├── engine.js        ← Spice-aware voicing generator
+│       ├── suggest.js       ← "What chord comes next" engine
+│       ├── compose.js       ← Compose mode: chord tree + ledger
+│       ├── notation.js      ← Grand staff (VexFlow)
+│       └── settings.js      ← Theme picker
+├── CLAUDE.md                ← Architecture notes
 ├── package.json
 └── README.md
 ```
+
+See `CLAUDE.md` for how the four harmony engines fit together.
 
 ---
 
 ## Coming next
 
-- [ ] Phase 2: Chord progression suggestions (Markov chain, genre-aware)
-- [ ] Phase 3: Pianist voicing library (Herbie Hancock, Robert Glasper, Bill Evans)
+- [x] Phase 2: Chord progression trainer
+- [x] Phase 3: Pianist voicing library (Herbie, Evans, Glasper, McCoy, Monk)
+- [ ] Rhodes samples — `src/renderer/sounds/Samples/` is currently empty
 - [ ] Phase 4: AI chord assistant via Claude API
 - [ ] Phase 5: Packaging → `.dmg` installer

@@ -3,7 +3,9 @@
     "allow": [
       "Bash(unzip -l \"/Users/jared/Desktop/Voice_Me.zip\")",
       "Bash(unzip -q \"/Users/jared/Desktop/Voice_Me.zip\" -d .)",
-      "Bash(npm --version)"
+      "Bash(npm --version)",
+      "Bash(npm approve-scripts *)",
+      "Bash(npm run *)"
     ]
   }
 }

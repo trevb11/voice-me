@@ -1247,12 +1247,19 @@ body.compose-mode #compose-backspace { display: inline-flex; align-items: center
 #compose-backspace:active { background: var(--border); }
 /* ── Shape dial ─────────────────────────────────────────────────────────── */
 /* Sits beside the spice dial: spice picks which notes, shape picks how they
-   spread. Two dials because the two decisions are independent. */
+   spread. Two dials because the two decisions are independent.
+   Compose-mode only, matching #spice-dial — these steer the tree's
+   suggestions, so they have nothing to do outside compose mode. */
 
 #shape-dial {
-  display: flex;
-  gap: 2px;
+  display: none;
   align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+body.compose-mode #shape-dial {
+  display: inline-flex;
 }
 
 /* ── Variant menu ───────────────────────────────────────────────────────── */

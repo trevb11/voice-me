@@ -13,7 +13,9 @@
       "Bash(git -c user.name=\"Jared\" -c user.email=\"jaredsilversteindrums@gmail.com\" commit -qm \"Correct CLAUDE.md: voicing.js is dead code; document compose-mode key-lighting bugs\")",
       "Bash(node test/harmony.test.js)",
       "Bash(git -c user.name=Jared -c user.email=jaredsilversteindrums@gmail.com commit -qm 'Add unified harmony engine with orthogonal spice/shape dials, plus invariant suite *)",
-      "Bash(git -c user.name=Jared -c user.email=jaredsilversteindrums@gmail.com commit -qm 'Replace scored suggestions with hard-wired harmonic devices *)"
+      "Bash(git -c user.name=Jared -c user.email=jaredsilversteindrums@gmail.com commit -qm 'Replace scored suggestions with hard-wired harmonic devices *)",
+      "Bash(git -c user.name=Jared -c user.email=jaredsilversteindrums@gmail.com commit -qm 'Wire the harmony engine into the app; delete the three superseded engines *)",
+      "Bash(npm test *)"
     ]
   }
 }

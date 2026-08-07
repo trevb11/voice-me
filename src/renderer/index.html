@@ -34,7 +34,10 @@
         <div id="held-notes-wrap">
           <div id="held-notes"></div>
         </div>
+        <!-- Two independent dials: spice picks WHICH notes, shape picks HOW
+             they spread across the registers. -->
         <div id="spice-dial"></div>
+        <div id="shape-dial"></div>
         <button id="audio-toggle-btn" class="toggle-btn">○ Sound</button>
         <button id="bass-note-btn" class="toggle-btn">Bass Note</button>
       </div>
@@ -127,18 +130,36 @@
 
   </div>
 
-  <script src="piano.js"></script>
-  <script src="app.js"></script>
-  <script src="voicings.js"></script>
-  <script src="panel.js"></script>
+  <!--
+    Load order, in three tiers. Within a tier order does not matter; across
+    tiers it does, and the grouping is the documentation.
+
+      1. Vendored libraries and pure data — depend on nothing.
+      2. Engines — depend on tier 1 only, and export to `window`.
+      3. UI — depends on tiers 1-2, and subscribes to VoiceMeBus for note events.
+
+    Nothing reads another module's global at load time any more, so a file that
+    arrives late gets found when it is first CALLED rather than captured as
+    `undefined` at parse time. That was the old hazard: suggest.js grabbed
+    window.Voicing on its first line, so moving one script tag broke it
+    silently.
+  -->
+
+  <!-- 1. libraries and data -->
   <script src="tone.js"></script>
+  <script src="vexflow.js"></script>
+  <script src="voicings.js"></script>
+
+  <!-- 2. engines -->
+  <script src="harmony.js"></script>
+  <script src="piano.js"></script>
   <script src="audio.js"></script>
-  <script src="voicing.js"></script>
-  <script src="engine.js"></script>
-  <script src="suggest.js"></script>
+
+  <!-- 3. ui -->
+  <script src="app.js"></script>
+  <script src="notation.js"></script>
+  <script src="panel.js"></script>
   <script src="compose.js"></script>
   <script src="settings.js"></script>
-  <script src="vexflow.js"></script>
-  <script src="notation.js"></script>
 </body>
 </html>

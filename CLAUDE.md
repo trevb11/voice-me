@@ -9,6 +9,7 @@ played, suggests where to go next, and shows it on a grand staff.
 ```bash
 npm start          # run the app
 npm run dev        # run with detached DevTools
+npm test           # harmony invariants (node, no framework)
 npm run rebuild    # recompile node-midi against Electron (after Electron bumps)
 npm run build      # electron-builder → .dmg + .zip
 ```
@@ -20,153 +21,167 @@ version change — `midi` is a native CoreMIDI addon.
 
 Three Electron processes, the usual split:
 
-- `src/main/main.js` — window creation + all MIDI I/O. Opens a `midi.Input`,
-  translates raw status bytes into `{type, note, velocity, channel}` events, and
-  pushes them to the renderer over IPC. Polls `getPortCount()` every 1.5s so
-  hot-plugging a keyboard just works.
+- `src/main/main.js` — window creation + all MIDI I/O. Translates raw status
+  bytes into `{type, note, velocity, channel}` and pushes them over IPC. Polls
+  `getPortCount()` every 1.5s so hot-plugging a keyboard works.
 - `src/preload/preload.js` — context-isolated bridge exposing `window.midi`.
   Never expose raw `ipcRenderer`.
 - `src/renderer/` — everything else. **Plain global scripts, no bundler, no
-  modules.** Each file IIFEs or declares globals and hangs its public API on
-  `window`. Load order in `index.html` is load-bearing.
+  modules.**
 
-### Renderer modules and their globals
-
-Loaded in this order (see `index.html`):
+### Renderer modules
 
 | File | Global | Role |
 |---|---|---|
-| `piano.js` | `Piano` | Builds the 88-key… actually A1–C7 (MIDI 33–96) SVG keyboard; note-name spelling helpers |
-| `app.js` | `VoiceMe` | Entry point. MIDI→visual wiring, sustain pedal, chord **recognition**, key-lighting API |
-| `voicings.js` | `VoicingLibrary` | Static curated data: ~11 families of jazz voicings with pianist/genre tags |
-| `panel.js` | `VoiceMePanel` | Bottom drawer: voicing library browser + progression trainer + "In The Wild" banner |
-| `tone.js` | `Tone` | Vendored Tone.js v14 |
-| `audio.js` | `AudioEngine` | Fender Rhodes sampler, 4 velocity layers |
-| `voicing.js` | `Voicing` | Voicing **arranger**: modes (closed/open/cluster/minimal) + `voiceLead()` |
-| `engine.js` | `VoiceEngine` | Spice-aware voicing **generator** + `voiceLeadFrom()` + narration |
-| `suggest.js` | `Suggest` | Chord **suggestion** engine — what chord comes next |
-| `compose.js` | `Compose` | Compose mode: the chord tree, ledger, leaf animations |
-| `settings.js` | `VoiceMeSettings` | Theme picker (light/dark), persisted to localStorage |
-| `vexflow.js` | `Vex` | Vendored VexFlow v3 |
-| `notation.js` | `VoiceMeNotation` | Grand staff rendering: live / voicing / progression / composition modes |
+| `harmony.js` | `Harmony` | **The harmony engine.** Recognition, colour, voicing, voice leading, devices, suggestion |
+| `piano.js` | `Piano` | SVG keyboard (A1–C7, MIDI 33–96) and note spelling |
+| `app.js` | `VoiceMe`, `VoiceMeBus` | MIDI wiring, key lighting, chord readout |
+| `voicings.js` | `VoicingLibrary` | Static curated voicing data |
+| `panel.js` | `VoiceMePanel` | Voicing library browser + progression trainer |
+| `audio.js` | `AudioEngine` | Rhodes sampler, 4 velocity layers |
+| `compose.js` | `Compose` | Compose mode: the device tree |
+| `notation.js` | `VoiceMeNotation` | Grand staff (VexFlow) |
+| `settings.js` | `VoiceMeSettings` | Theme picker |
+| `tone.js` / `vexflow.js` | `Tone` / `Vex` | Vendored libraries |
 
-`app.js` is the hub — `notifyPanel()` fans held notes out to the panel, compose
-mode, and notation on every note event.
+**Load order is grouped into three tiers in `index.html`** (libraries → engines
+→ UI). Within a tier order doesn't matter. Nothing reads another module's
+global at load time, so a late-arriving file is found when first *called*
+rather than captured as `undefined` at parse time.
 
-## The harmony stack (the interesting part)
+### How modules talk
 
-There are four music-theory files, but only **three are live**. Know which one
-you're touching — and note that `voicing.js` is not in the running path at all.
+`app.js` broadcasts `notes` on `VoiceMeBus` whenever what's sounding changes.
+`panel.js`, `compose.js` and `notation.js` subscribe. **`app.js` does not know
+its consumers exist** — adding a feature never means editing it.
 
-1. **Recognition** — `app.js`. `CHORD_PATTERNS` + `findBestChord()` score every
-   pitch class as a candidate root against ~60 interval patterns. The 5th is
-   optional; bonuses for bass-as-root, clean matches, and dominant character.
-   Two exits: `detectChord()` (display string, handles inversions and
-   slash-chord readings) and `identifyChordPC()` (structured
-   `{rootPC, quality, suffix, bassPC}` for compose mode). A chord with no 3rd
-   and no sus is deliberately left unnamed.
+## The harmony engine
 
-2. **Suggestion** — `suggest.js`. Given the current chord + the committed trail,
-   infers a key, generates candidates from five families (functional,
-   chromatic-bass, 1–2 voice reharm/slip, tritone sub, inversion), scores them
-   on `base + voice-leading smoothness + tendency-tone idioms + dominant pull`,
-   and spreads winners across five named slots: **Home, Lift, Shadow, Slide,
-   Far**. Returns notes + a voice-leading mapping per branch.
+Everything lives in `harmony.js`. It runs in the browser (`window.Harmony`) and
+in Node (`module.exports`), which is what lets `npm test` exercise it headless.
 
-3. **Voicing (spice-aware)** — `engine.js`. `voiceChord()` / `voiceLeadFrom()`.
-   Core tones are always voiced (never strips what the player played);
-   the **spice dial** (0 basic / 1 colorful / 2 complex) only widens which
-   extensions the engine *volunteers*. This is what compose mode uses.
+### Two orthogonal dials
 
-4. **`voicing.js` — DEAD CODE.** All 510 lines are unreachable except
-   `nearestOctave()`, a 9-line helper called once from [suggest.js:225](src/renderer/suggest.js:225).
-   Its `QUALITY` table, the four arrange modes (closed/open/cluster/minimal),
-   and `voiceLead()` — which pins common tones at *exact* pitch and does
-   exhaustive minimal-motion matching — are never invoked by anything. It is the
-   best voice-leader in the codebase and it has never run. Verified by grep:
-   `window.Voicing` appears exactly once outside its own file.
+- **Spice** (`0` basic / `1` colourful / `2` complex) — *which pitch classes*
+- **Shape** (`minimal` / `closed` / `open` / `cluster`) — *how they spread
+  across registers*
 
-Compose mode lights the keyboard from a `{held, moved, appeared, released}`
-mapping:
-- **blue** = held, keep these down
-- **gold** = press these (`appeared` + arrival of `moved` voices)
-- **grey** = lift these (`released` + departure of `moved` voices)
-- **amber arrows** over the keyboard = a voice gliding from → to
-- **green flash** = you played it right
+They compose. An open triad and a minimal altered dominant are both
+expressible. Keep them separate: the predecessor conflated them (`mode:'open'`
+silently added 9ths and 13ths, which is spice's job) and half the grid was
+unreachable.
 
-That mapping is produced by `suggest.js` `voiceCandidate()`, which has two
-paths, and **neither fills all four buckets**:
-- reharm/slip candidates build `held`/`moved`/`released` inline; `appeared`
-  stays empty.
-- everything else goes through `ENG.voiceLeadFrom()` → `toMapping()`, which
-  hardcodes `appeared: []` and `released: []`.
+### Vocabulary
 
-So `appeared` is never populated by any path, and `released` only on a minority
-of branches. See Known bugs.
+One table, `QUALITIES`, keyed by canonical quality token. `core` tones are
+always voiced; `ext` tones are volunteered per spice tier. `PATTERNS` holds the
+finer-grained recognition spellings, each pointing at a canonical quality via
+`voiceAs` — **that replaced `compose.js`'s `QUALITY_MAP`**, so the
+correspondence lives in the data and can't drift.
 
-## Compose mode
+`TIER` gates *suggestions* by the dial; recognition is never gated. If you play
+it, the app names it. `PLAINER` maps a quality down when the dial is below its
+tier, so a device asking for `7alt` at basic still runs as `7` — the move
+survives, the colour doesn't.
 
-`compose.trail` is the song: `[seed, ...committed]`, and `currentChord` is
-always `trail[last]`. Free play *edits* the tip; picking a branch and playing it
-*appends*; Backspace pops and re-derives the tree (so undo is exact).
+### Voice leading
 
-The tree only rebuilds on an **attack** (a newly-pressed note) — releasing keys
-must never regenerate it, or suggestions vanish the moment you lift your hands
-to play one. `compose.prevHeld` is what distinguishes attack from release.
+`lead()` pins common tones at exact pitch (zero motion), then does exhaustive
+minimal-motion matching on the rest with branch-and-bound. Returns
+`{held, moved, appeared, released}` covering **every** note on both sides.
 
-The staff shows the last 4 chords (`STAFF_WINDOW`), one chord per measure in
-`compositionMode`.
+There is deliberately **no bail-out path**. Register problems are fixed, not
+escaped. The predecessor discarded the whole mapping when it judged a result
+"muddy" and returned a single pair, which is why compose mode used to light one
+key for a four-note chord.
+
+### Key lighting
+
+`fingering(prevNotes, targetNotes)` derives `{hold, press, lift}` **by set
+difference**, not from the voice-leading mapping. The three cues are disjoint
+and cover exactly the right keys by construction, so a flaw in the mapping can
+never light the wrong keys. The mapping is still the right source for *arrows*.
+
+`app.js` has one cue object and one repaint; each key's colour is a pure
+function of (is it down?, what does the cue ask?). The predecessor kept three
+independent sets whose clear-functions disagreed about precedence.
+
+## Devices
+
+Branches are **named harmonic moves**, not scoring winners. Search only breaks
+ties between valid instances of a device; it never decides which devices exist.
+
+Each device emits a **sequence of 1–3 chords**, because the move is the lesson —
+`A7/C♯ → Dm7` teaches the bass climb C–C♯–D, and `A7/C♯` alone teaches nothing.
+Compose mode walks each step in turn, then plants the device's **last** chord as
+the new tree root.
+
+Slots are functional categories, and two of them guarantee bass motion:
+
+| Slot | Meaning |
+|---|---|
+| `cadence` | strongest functional destination |
+| `ascending` | bass climbs by step or half step |
+| `descending` | bass falls by step or half step |
+| `secondary` | secondary dominant / modulation |
+| `colour` | reharmonisation, tritone sub, non-functional sonority |
+
+Each branch carries `variants[]` — the same function in other colourings (F7,
+F9, F13, F7♭9, F7alt) for the hover menu, so one function doesn't consume four
+branches.
+
+### The two non-functional device families
+
+These have no roman numeral, and they matter — they're most of the Shorter /
+Hancock / Glasper vocabulary. Both are **common-tone devices where the bass
+carries the motion**:
+
+- **`chromatic-sonority`** is *found*, not generated: hold the upper structure,
+  slide the bass a half step, and name what results. It reads the notes
+  **actually held**, not the chord symbol — Fm11 voiced `F A♭ B♭ E♭` gives
+  Emaj7♯11 holding 3 voices, but the same chord with a natural 5 gives a
+  different answer. An engine working from symbols cannot find these.
+- **`modal-oscillation`** trades chords that share nearly everything. C6/9 is a
+  strict *subset* of Dm11, so they swap with only the bass moving (Shorter,
+  "Mahjong").
 
 ## Conventions
 
-- Music is spoken in **pitch classes 0–11** and **MIDI numbers** (middle C = 60).
-  Quality tokens are strings like `maj7`, `m7b5`, `7alt`, `7b9(13)` — the
-  canonical set lives in `voicing.js` `QUALITY` and `suggest.js` `Q`.
-  `compose.js` `QUALITY_MAP` translates recognizer suffixes → canonical tokens;
-  **add new suffixes to both ends or they silently fall back.**
-- Enharmonic spelling comes from `Piano.SHARP_ROOT_PCS` — sharps for D E G A B,
-  flats otherwise. `Piano.musicalGlyphs()` converts `#`/`b` → `♯`/`♭` for display.
-- Theming is CSS custom properties on `[data-theme]`. Anything drawing to SVG
-  should read `--text-primary` / `--text-muted` / `--accent`, not hardcode ink.
-  Key-lighting colors in `app.js` are deliberately literal hex (they're semantic
-  state, not theme).
-- Column-aligned assignments and `── section ──` comment rules are the house
-  style throughout. Match it.
-- CSP in `index.html` is strict (`default-src 'self'`). No CDN scripts —
-  vendored libs only.
+- Pitch classes 0–11 and MIDI numbers (middle C = 60). Quality tokens are
+  strings (`maj7`, `m7b5`, `7alt`, `7b9(13)`) — the canonical set is
+  `QUALITIES`.
+- Enharmonic spelling from `Harmony.SHARP_ROOT_PCS` — sharps for D E G A B,
+  flats otherwise. `Harmony.glyphs()` converts `#`/`b` → `♯`/`♭` for display.
+- Theming is CSS custom properties on `[data-theme]`. SVG should read
+  `--text-primary` / `--text-muted` / `--accent`. Key-lighting colours in
+  `app.js` are deliberately literal — they're semantic state, not theme.
+- Column-aligned assignments and `── section ──` comment rules are house style.
+- CSP is strict (`default-src 'self'`). No CDN scripts — vendored libs only.
 
-## Known bugs
+## Testing
 
-**Compose mode lights too few keys (~5.5% of branches).**
-[engine.js:121](src/renderer/engine.js:121) — when `voiceLeadFrom()` judges its
-result `muddy()`, it discards the voice-led version and returns the freshly
-generated voicing with a mapping of **exactly one pair** (bass → bass). Every
-upper voice vanishes from the mapping, so compose mode lights one key for a
-four-note chord, and `checkComposeMatch()` demands exact set equality — so the
-chord can never be completed. Measured over 6300 branches seeded with realistic
-close / shell / rootless voicings: 345 branches broken, **all** of them this
-collapse. Concentrated in the Shadow slot (141) and in close/rootless voicings,
-i.e. what a jazz player actually plays. Example: play `Cmaj7` as `C3 E3 G3 B3`,
-pick Shadow → `Am7`; you must play `A2 C4 G4 B4` but only `A2` lights.
+`npm test` runs 43 invariants over every root × quality × spice × shape, plus
+realistic human voicings (close, shell, rootless) as voice-leading seeds. No
+framework.
 
-**Paint layers fight each other (~9.7% of branches).**
-`app.js` keeps three independent highlight sets (`suggestionKeys`,
-`heldSuggestionKeys`, `releasedKeys`) with three `clear*` functions whose
-restore logic disagrees about which other layer wins. `clearSuggestionKeys()`
-restores to the default gradient without checking the other two, so clearing
-gold also wipes blue and grey. `compose.js` `selectBranch()` calls them in a
-fixed order (`setSuggestionKeys` → `setHeldKeys` → `setReleasedKeys`), so
-whenever a key is both a `moved.to` and some other voice's `moved.from` — 9.7%
-of branches — grey paints over gold and the key reads as "lift" when it should
-read "press".
+Seeding matters: an early sweep reported 0% failures because it fed the engine
+its *own* output, which is already well-spaced. Real players play close
+voicings, and that's where the bugs were. Seed from `HUMAN_SHAPES`.
+
+Two families are exempt from the strict root assertion because the ambiguity is
+in the music: `dim7` is symmetric, and inverted (`invertBass`) shapes are
+genuinely ambiguous — C6 over E really is Am7/E.
 
 ## Known gaps
 
 - **`src/renderer/sounds/Samples/` is empty in the exported zip only** — Jared
   has the 80 Rhodes samples locally (`{note}-{p|mp|mf|f}.wav`, one every 3
-  semitones A0–A5); they were stripped for size. Audio works on his machine.
-- No tests, no linter.
+  semitones A0–A5). Audio works on his machine.
+- No linter.
 - `npm audit` reports vulnerabilities in the electron-builder dev chain; they
   don't affect the shipped app.
-- The project directory has a space in its path, which node-gyp warns about.
-  The rebuild works anyway, but it's a known fragility.
+- The project path contains a space, which node-gyp warns about. The rebuild
+  works anyway.
+- The in-app browser preview caches referenced `.js` files, so it shows stale
+  code after edits. Verify renderer changes by running the real app
+  (`npm start`) and checking for `ERROR:CONSOLE` in the output.

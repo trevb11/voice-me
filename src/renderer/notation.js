@@ -774,3 +774,7 @@ window.VoiceMeNotation = {
   clearOverride,
   redrawForTheme,
 };
+
+
+// ── Listen for what is being played ────────────────────────────────────────
+window.VoiceMeBus?.on('notes', (notes) => updateHeldNotes(notes));

@@ -1245,3 +1245,100 @@ body.compose-mode #compose-trail { flex: 1; }
 body.compose-mode #compose-backspace { display: inline-flex; align-items: center; justify-content: center; }
 #compose-backspace:hover { color: var(--text-primary); border-color: var(--text-muted); }
 #compose-backspace:active { background: var(--border); }
+/* ── Shape dial ─────────────────────────────────────────────────────────── */
+/* Sits beside the spice dial: spice picks which notes, shape picks how they
+   spread. Two dials because the two decisions are independent. */
+
+#shape-dial {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+/* ── Variant menu ───────────────────────────────────────────────────────── */
+/* Hovering a branch shows the other colourings of the same harmonic function —
+   F7, F9, F13, F7♭9 all do one job, so they share one branch. */
+
+.variant-menu {
+  position: fixed;
+  z-index: 400;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--card-bg, #1b1b1f);
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  box-shadow: 0 8px 28px rgba(0,0,0,0.32);
+  font-family: 'SF Pro Display', -apple-system, sans-serif;
+  animation: variant-in 0.14s ease-out both;
+}
+
+@keyframes variant-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.variant-menu-head {
+  padding: 4px 8px 6px;
+  font-family: 'SF Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.variant-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.variant-option:hover { background: var(--hover-bg, rgba(255,255,255,0.07)); }
+
+.variant-option.current { background: var(--accent-soft, rgba(59,130,246,0.16)); }
+.variant-option.current .variant-name::after {
+  content: ' ·';
+  color: var(--accent);
+}
+
+.variant-name {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+}
+
+.variant-tier {
+  font-family: 'SF Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  opacity: 0.65;
+}
+
+/* ── Trail: device labels ───────────────────────────────────────────────── */
+/* The ledger marks where each device began, so a committed sequence reads as
+   one move rather than as loose chords. */
+
+.trail-device {
+  margin-right: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--accent-soft, rgba(59,130,246,0.14));
+  color: var(--accent);
+  font-family: 'SF Mono', monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  vertical-align: middle;
+}
+
+/* Roman-numeral motion above each branch tip. */
+.branch-roman-text { pointer-events: none; }

@@ -1,141 +1,66 @@
 /**
  * compose.js
- * Voice Me — "Compose with me" mode (redesigned)
+ * "Compose with me" — the chord tree.
  *
- * The tree is a natural wheat stalk aesthetic:
- *   • Root chord at bottom-center (chord name floats as text, no bubble)
- *   • Curved stems arc upward from the root — hand-drawn feel
- *   • Chord suggestions float as text at each stem's tip
- *   • Whole stalk sways gently, tips bob with "weight" of chord names
+ * Each branch is a harmonic DEVICE, not a single chord: a named move with its
+ * roman-numeral motion and, usually, more than one chord. `A7/C♯ → Dm7` is one
+ * branch, because the lesson is the bass climb C–C♯–D and `A7/C♯` on its own
+ * does not teach it. The tree walks you through the whole device chord by
+ * chord, then plants the device's LAST chord as the new root — so the sequence
+ * you just learned becomes the ground you build from.
  *
- * On correct play:
- *   • Chord name at tip dissolves into a leaf
- *   • Leaf falls, tumbling and folding in space
- *   • Leaf slowly dissolves during fall
- *   • Chosen chord slides down to become the new root
- *   • New branches generate with fresh suggestions
- *   • Committed chord appears in the horizontal ledger under the piano
+ * Talks to the piano through two calls: `cueFor(from, to)` says what the hands
+ * should do, `showArrows(moved)` says which voice went where. It no longer
+ * issues six ordered lighting commands and hopes they land in the right order.
  */
 
 // ── State ──────────────────────────────────────────────────────────────────
 
 const compose = {
-  active:        false,
-  currentChord:  null,   // { rootPC, quality, notes, name }
-  branches:      [],     // current 5 branch objects
-  trail:         [],     // committed chords in order
-  awaitingPlay:  false,
-  pendingChord:  null,
-  key:           null,   // inferred { tonicPc, mode } from the trail
-  prevHeld:      new Set(),  // notes held on the previous event — to tell attack from release
-  spice:         1,          // 0 basic · 1 colorful · 2 complex (the harmonic-richness dial)
+  active:       false,
+  currentChord: null,   // { rootPC, quality, notes, name }
+  branches:     [],
+  trail:        [],     // committed chords, each tagged with the device it came from
+  pending:      null,   // { branch, step } while walking a device
+  key:          null,
+  prevHeld:     new Set(),
+  spice:        1,      // 0 basic · 1 colourful · 2 complex — WHICH notes
+  shape:        'closed', // minimal · closed · open · cluster — HOW they spread
+  groupSeq:     0,      // increments per committed device, so Backspace can pop one whole
 };
 
-// ── Branch slots ────────────────────────────────────────────────────────────
-// Fan order left→right. Home grows tallest (centre); the adventurous Slide/Far
-// sit on the outer edges, the diatonic-colour Shadow/Lift flank the centre.
-
-const BRANCH_SLOTS = [
-  { id: 'far',    label: 'Far'    },
-  { id: 'shadow', label: 'Shadow' },
-  { id: 'home',   label: 'Home'   },
-  { id: 'lift',   label: 'Lift'   },
-  { id: 'slide',  label: 'Slide'  },
-];
-
-// ── Chord suggestion — delegated to the suggestion engine (suggest.js) ───────
-// The engine scores functional + transformational candidates by voice-leading
-// smoothness, idiomatic tendency-tone resolutions, and harmonic pull, then
-// returns one voice-led chord per slot (each with its held/moved/new/lift map).
+// ── Suggestions ────────────────────────────────────────────────────────────
 
 function generateBranches(chord) {
-  if (!window.Suggest) return [];
-  const prevNotes = chord.notes || [];
-  const result = window.Suggest.branchesFor(
-    prevNotes, chord.rootPC, chord.quality, compose.trail.slice(0, -1), compose.spice
+  if (!window.Harmony) return [];
+  const result = Harmony.suggest(
+    chord.notes || [], chord.rootPC, chord.quality,
+    compose.trail.slice(0, -1), compose.spice, compose.shape
   );
   compose.key = result.key;
-
-  const bySlot = {};
-  result.branches.forEach(b => { bySlot[b.slot] = b; });
-
-  const branches = [];
-  BRANCH_SLOTS.forEach(slotDef => {
-    const s = bySlot[slotDef.id];
-    if (!s) return;
-    branches.push({
-      id:    slotDef.id,
-      label: slotDef.label,
-      chord: {
-        rootPC:  s.rootPC,
-        quality: s.quality,
-        bassPc:  s.bassPc,
-        notes:   s.notes,
-        mapping: s.mapping,
-        reason:  s.reason,
-        name:    composeBranchName(s),
-      },
-    });
-  });
-  return branches;
+  return result.branches;
 }
 
-function composeBranchName(s) {
-  let name = composeChordName(s.rootPC, s.quality);
-  if (s.bassPc != null && s.bassPc !== s.rootPC) {
-    const useSharp = Piano.SHARP_ROOT_PCS.has(s.bassPc);
-    name += '/' + Piano.getNoteName(s.bassPc, useSharp);
-  }
-  return name;
+function chordNameOf(rootPC, quality, bassPc) {
+  return Harmony.chordName(rootPC, quality, bassPc);
 }
 
-function composeChordName(rootPC, quality) {
-  const useSharp = Piano.SHARP_ROOT_PCS.has(rootPC);
-  const root     = Piano.getNoteName(rootPC, useSharp);
-  return Piano.musicalGlyphs(root + quality);
-}
-
-// ── Chord detection from held MIDI ─────────────────────────────────────────
-// Delegates to app.js's recognizer (fifth-optional, best-match, extension-aware)
-// and maps its quality suffix → the canonical tokens suggest.js & voicing.js use.
-
-const QUALITY_MAP = {
-  '':'maj7', 'm':'m7', 'dim':'dim7', 'aug':'maj7', 'sus2':'7sus4', 'sus4':'7sus4',
-  '6':'maj7', 'm6':'m7', '6/9':'maj9', 'm6/9':'m9', 'add9':'maj7', 'madd9':'m7',
-  'maj7':'maj7', 'm7':'m7', '7':'7', 'mM7':'mMaj7', 'dim7':'dim7', 'm7b5':'m7b5',
-  'aug7':'7alt', '7sus4':'7sus4', '9sus4':'7sus4',
-  '7b9':'7b9', '7#9':'7#9', '7b5':'7alt', '9b5':'7alt', '9#5':'7alt',
-  '7b5b9':'7alt', '7b5#9':'7alt', '7#5b9':'7alt', '7#5#9':'7alt',
-  '7#11':'9', '7b9#11':'7alt', '7#9#11':'7alt',
-  'maj9':'maj9', 'm9':'m9', '9':'9', 'mM9':'mMaj7',
-  '11':'9', 'm11':'m9', 'maj11':'maj9', 'maj7#11':'maj9', 'maj9#11':'maj9',
-  '13':'13', '9(13)':'13', '7b9(13)':'7b9(13)', '7#9(13)':'7#9(13)',
-  '7b9(b13)':'7b9(b13)', '7#9(b13)':'7#9(b13)', '9(b13)':'7alt',
-  'm13':'m9', 'maj13':'maj9',
-};
+// ── Reading what the player played ─────────────────────────────────────────
 
 function detectComposedChord(heldMidi) {
-  if (!heldMidi || heldMidi.length < 2) return null;
-  const id = window.VoiceMe?.identifyChord(heldMidi);
+  const id = Harmony.identify(heldMidi);
   if (!id) return null;
-
-  let quality = QUALITY_MAP[id.suffix];
-  if (!quality) {
-    // Fallback from interval content when a suffix isn't mapped
-    const iv = new Set(id.notes.map(n => ((n - id.rootPC) % 12 + 12) % 12));
-    quality = iv.has(3) ? 'm7' : (iv.has(10) ? '7' : 'maj7');
-  }
-  return { rootPC: id.rootPC, quality, notes: id.notes, bassPC: id.bassPC };
+  // `voiceAs` is the canonical quality the engine can voice — the recogniser
+  // names finer distinctions than the voicer needs, and the vocabulary carries
+  // that correspondence itself now.
+  return { rootPC: id.rootPC, quality: id.voiceAs, notes: id.notes, bassPC: id.bassPC };
 }
 
 // ── Tree geometry ──────────────────────────────────────────────────────────
 
-const TREE_W = 680;
 const TREE_H = 470;
-const ROOT_X = 155;              // fixed vertex, left-of-centre so the tree leans right
+const ROOT_X = 155;
 const ROOT_Y = TREE_H - 44;
-
-// ── Renders the tree ───────────────────────────────────────────────────────
 
 function renderTree() {
   const container = document.getElementById('compose-tree');
@@ -147,20 +72,16 @@ function renderTree() {
       <div class="compose-empty">
         <div class="compose-empty-icon">✻</div>
         <div class="compose-empty-text">Play a chord to grow the tree</div>
-      </div>
-    `;
+      </div>`;
     return;
   }
 
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '80 6 515 482');   // hugs the content, room for larger labels
+  svg.setAttribute('viewBox', '80 0 560 490');
   svg.setAttribute('class',   'compose-tree-svg');
-  svg.setAttribute('preserveAspectRatio', 'xMinYMid meet');   // hug the left of the column
+  svg.setAttribute('preserveAspectRatio', 'xMinYMid meet');
 
-  // Draw each branch (stalk + tip chord)
   compose.branches.forEach((branch, i) => drawStalk(svg, branch, i));
-
-  // Draw root chord name (no bubble, just typography)
   drawRootChord(svg, compose.currentChord);
 
   container.appendChild(svg);
@@ -171,29 +92,20 @@ function drawStalk(svg, branch, index) {
   const NS    = 'http://www.w3.org/2000/svg';
   const total = compose.branches.length;
 
-  // ── Cascade geometry ──
-  // All stalks share the fixed root vertex, rise as one trunk, then hook over to
-  // the right at descending heights so the tips hang, nested, down the right side.
-  const topTipY = 58;
-  const tipGap  = (TREE_H - 130) / Math.max(total, 1);
+  const topTipY = 52;
+  const tipGap  = (TREE_H - 120) / Math.max(total, 1);
   const tipY    = topTipY + index * tipGap;
-  const tipX    = ROOT_X + (300 - index * 18);      // top reaches furthest right
+  const tipX    = ROOT_X + (300 - index * 18);
 
-  const peakY = tipY - 34;                            // dome bulges above the tip → it hangs
+  const peakY = tipY - 34;
   const peakX = ROOT_X + (tipX - ROOT_X) * 0.44;
 
-  const c1x = ROOT_X + 5;                             // near-vertical trunk rise (shared base)
-  const c1y = ROOT_Y - (ROOT_Y - peakY) * 0.97;
-  const c2x = peakX;                                  // crest, then hook down into the tip
-  const c2y = peakY;
+  const g = document.createElementNS(NS, 'g');
+  g.setAttribute('class', 'branch-group');
+  g.setAttribute('data-branch-id', branch.slot);
 
-  const branchG = document.createElementNS(NS, 'g');
-  branchG.setAttribute('class', 'branch-group');
-  branchG.setAttribute('data-branch-id', branch.id);
-
-  // ── Stalk path — grows in (no idle sway) ──
   const path = document.createElementNS(NS, 'path');
-  path.setAttribute('d', `M ${ROOT_X},${ROOT_Y} C ${c1x},${c1y} ${c2x},${c2y} ${tipX},${tipY}`);
+  path.setAttribute('d', `M ${ROOT_X},${ROOT_Y} C ${ROOT_X + 5},${ROOT_Y - (ROOT_Y - peakY) * 0.97} ${peakX},${peakY} ${tipX},${tipY}`);
   path.setAttribute('stroke',         'var(--text-primary)');
   path.setAttribute('stroke-width',   '1.4');
   path.setAttribute('stroke-linecap', 'round');
@@ -207,18 +119,17 @@ function drawStalk(svg, branch, index) {
     path.style.strokeDashoffset = '0';
     path.style.opacity          = '0.78';
   }, index * 110 + 80);
-  branchG.appendChild(path);
+  g.appendChild(path);
 
-  // ── Tip — chord name + slot label hanging to the right of the tip ──
-  const tipG = document.createElementNS(NS, 'g');
-  tipG.setAttribute('class', 'branch-tip');
-  tipG.setAttribute('data-branch-id', branch.id);
-  tipG.style.cursor = 'pointer';
+  const tip = document.createElementNS(NS, 'g');
+  tip.setAttribute('class', 'branch-tip');
+  tip.setAttribute('data-branch-id', branch.slot);
+  tip.style.cursor = 'pointer';
 
-  if (branch.chord.reason) {
+  if (branch.reason) {
     const title = document.createElementNS(NS, 'title');
-    title.textContent = branch.chord.reason;
-    tipG.appendChild(title);
+    title.textContent = branch.reason;
+    tip.appendChild(title);
   }
 
   const dot = document.createElementNS(NS, 'circle');
@@ -227,147 +138,243 @@ function drawStalk(svg, branch, index) {
   dot.setAttribute('r',  '2');
   dot.setAttribute('fill', 'var(--text-primary)');
   dot.setAttribute('opacity', '0.7');
-  tipG.appendChild(dot);
+  tip.appendChild(dot);
 
-  const text = document.createElementNS(NS, 'text');
-  text.setAttribute('x',           tipX + 13);
-  text.setAttribute('y',           tipY + 4);
-  text.setAttribute('text-anchor', 'start');
-  text.setAttribute('font-size',   '17');
-  text.setAttribute('font-family', 'Georgia, serif');
-  text.setAttribute('font-style',  'italic');
-  text.setAttribute('fill',        'var(--text-primary)');
-  text.setAttribute('class',       'branch-chord-text');
-  text.textContent = branch.chord.name;
-  tipG.appendChild(text);
+  const text = (x, y, content, opts) => {
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', x);
+    t.setAttribute('y', y);
+    t.setAttribute('text-anchor', 'start');
+    t.setAttribute('font-size',   opts.size);
+    t.setAttribute('font-family', opts.mono ? 'SF Mono, monospace' : 'Georgia, serif');
+    if (opts.italic) t.setAttribute('font-style', 'italic');
+    if (opts.spacing) t.setAttribute('letter-spacing', opts.spacing);
+    t.setAttribute('fill',    opts.fill || 'var(--text-primary)');
+    t.setAttribute('opacity', opts.opacity ?? 1);
+    if (opts.cls) t.setAttribute('class', opts.cls);
+    t.textContent = content;
+    tip.appendChild(t);
+    return t;
+  };
 
-  const label = document.createElementNS(NS, 'text');
-  label.setAttribute('x',           tipX + 13);
-  label.setAttribute('y',           tipY + 21);
-  label.setAttribute('text-anchor', 'start');
-  label.setAttribute('font-size',   '10.5');
-  label.setAttribute('font-family', 'SF Mono, monospace');
-  label.setAttribute('letter-spacing', '0.08em');
-  label.setAttribute('fill',        'var(--text-muted)');
-  label.setAttribute('opacity',     '0.6');
-  label.setAttribute('class',       'branch-label-text');
-  label.textContent = branch.label;
-  tipG.appendChild(label);
+  // Roman-numeral motion sits above the chords — the theory, then the notes.
+  if (branch.roman && branch.roman !== '—') {
+    text(tipX + 13, tipY - 9, branch.roman,
+         { size: 10, mono: true, spacing: '0.06em', fill: 'var(--accent)', opacity: 0.85, cls: 'branch-roman-text' });
+  }
 
-  // Settle: the label fades in, its weight bounces the tip, then it comes to rest.
-  tipG.style.animation = `tip-settle 0.9s cubic-bezier(0.3,0.9,0.4,1) ${index * 110 + 860}ms both`;
+  text(tipX + 13, tipY + 6, branch.name,
+       { size: 16, italic: true, cls: 'branch-chord-text' });
 
-  branchG.appendChild(tipG);
-  svg.appendChild(branchG);
+  if (branch.deviceLabel) {
+    text(tipX + 13, tipY + 21, branch.deviceLabel,
+         { size: 9.5, mono: true, spacing: '0.05em', fill: 'var(--text-muted)', opacity: 0.6, cls: 'branch-label-text' });
+  }
+
+  tip.style.animation = `tip-settle 0.9s cubic-bezier(0.3,0.9,0.4,1) ${index * 110 + 860}ms both`;
+  g.appendChild(tip);
+  svg.appendChild(g);
 }
 
 function drawRootChord(svg, chord) {
   const NS = 'http://www.w3.org/2000/svg';
+  const add = (y, content, opts) => {
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', ROOT_X);
+    t.setAttribute('y', y);
+    t.setAttribute('text-anchor', 'middle');
+    t.setAttribute('font-size',   opts.size);
+    t.setAttribute('font-family', opts.mono ? 'SF Mono, monospace' : 'Georgia, serif');
+    if (opts.italic) t.setAttribute('font-style',  'italic');
+    if (opts.weight) t.setAttribute('font-weight', opts.weight);
+    if (opts.spacing) t.setAttribute('letter-spacing', opts.spacing);
+    t.setAttribute('fill',    opts.fill || 'var(--text-primary)');
+    t.setAttribute('opacity', opts.opacity ?? 1);
+    if (opts.cls) t.setAttribute('class', opts.cls);
+    t.textContent = content;
+    svg.appendChild(t);
+  };
 
-  const text = document.createElementNS(NS, 'text');
-  text.setAttribute('x',           ROOT_X);
-  text.setAttribute('y',           ROOT_Y + 21);
-  text.setAttribute('text-anchor', 'middle');
-  text.setAttribute('font-size',   '20');
-  text.setAttribute('font-family', 'Georgia, serif');
-  text.setAttribute('font-style',  'italic');
-  text.setAttribute('font-weight', '600');
-  text.setAttribute('fill',        'var(--text-primary)');
-  text.setAttribute('class',       'root-chord-text');
-  text.textContent = chord.name;
-  svg.appendChild(text);
+  add(ROOT_Y + 21, chord.name, { size: 20, italic: true, weight: '600', cls: 'root-chord-text' });
 
-  // Subtle inferred-key subtitle — "in Bb major" — the tonal home of the tree
   if (compose.key) {
-    const NAMES = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
-    const keyLabel = document.createElementNS(NS, 'text');
-    keyLabel.setAttribute('x',           ROOT_X);
-    keyLabel.setAttribute('y',           ROOT_Y + 41);
-    keyLabel.setAttribute('text-anchor', 'middle');
-    keyLabel.setAttribute('font-size',   '10');
-    keyLabel.setAttribute('font-family', 'SF Mono, monospace');
-    keyLabel.setAttribute('letter-spacing', '0.1em');
-    keyLabel.setAttribute('fill',        'var(--text-muted)');
-    keyLabel.setAttribute('opacity',     '0.55');
-    keyLabel.textContent = `in ${NAMES[compose.key.tonicPc]} ${compose.key.mode}`;
-    svg.appendChild(keyLabel);
+    add(ROOT_Y + 41, `in ${Harmony.noteName(compose.key.tonicPc, false)} ${compose.key.mode}`,
+        { size: 10, mono: true, spacing: '0.1em', fill: 'var(--text-muted)', opacity: 0.55 });
   }
 }
 
-// ── Branch interaction ────────────────────────────────────────────────────
+// ── Branch interaction ─────────────────────────────────────────────────────
 
 function bindBranchInteraction() {
   document.querySelectorAll('.branch-tip').forEach(tip => {
-    const branchId = tip.getAttribute('data-branch-id');
-    const branch   = compose.branches.find(b => b.id === branchId);
+    const branch = compose.branches.find(b => b.slot === tip.getAttribute('data-branch-id'));
     if (!branch) return;
 
     tip.addEventListener('mouseenter', () => {
-      window.VoiceMe?.setSuggestionKeys(branch.chord.notes);
+      if (!compose.pending) previewBranch(branch);
       tip.classList.add('hovered');
+      showVariantMenu(branch, tip);
     });
 
     tip.addEventListener('mouseleave', () => {
-      if (!compose.awaitingPlay) {
-        window.VoiceMe?.clearSuggestionKeys();
-      }
+      if (!compose.pending) window.VoiceMe?.clearCue();
       tip.classList.remove('hovered');
+      scheduleHideVariants();
     });
 
     tip.addEventListener('click', () => selectBranch(branch));
   });
 }
 
-function selectBranch(branch) {
-  compose.awaitingPlay = true;
-  compose.pendingChord = branch.chord;
-
-  // Light the keys straight from the voice-leading map:
-  //   held  = common tones to keep down (blue)
-  //   moved = a voice glides from → to (its source lifts, its target presses, arrow)
-  //   new   = appeared voices to press (gold)   lift = released voices to raise (grey)
-  const m = branch.chord.mapping || { held: [], moved: [], appeared: [], released: [] };
-  const heldKeys  = m.held.map(v => v.to);
-  const pressKeys = [...m.appeared.map(v => v.to),   ...m.moved.map(v => v.to)];
-  const liftKeys  = [...m.released.map(v => v.from), ...m.moved.map(v => v.from)];
-  const movedFrom = m.moved.map(v => v.from);
-  const movedTo   = m.moved.map(v => v.to);
-
-  window.VoiceMe?.clearReleasedKeys();
-  window.VoiceMe?.clearHeldKeys();
-  window.VoiceMe?.setSuggestionKeys(pressKeys);
-  window.VoiceMe?.setHeldKeys(heldKeys);
-  window.VoiceMe?.setReleasedKeys(liftKeys);
-  window.VoiceMe?.showArrows(movedFrom, movedTo);
-
-  // Highlight pending branch tip
-  document.querySelectorAll('.branch-tip').forEach(t => t.classList.remove('pending'));
-  const pendingTip = document.querySelector(`.branch-tip[data-branch-id="${branch.id}"]`);
-  if (pendingTip) pendingTip.classList.add('pending');
-
-  updateStatus(`Play ${branch.chord.name}`);
+function previewBranch(branch) {
+  window.VoiceMe?.cueFor(window.VoiceMe.soundingNotes(), branch.notes);
 }
 
-// ── Match detection ───────────────────────────────────────────────────────
+// ── Variant menu — same function, other colourings ─────────────────────────
+// F7, F9, F13, F7♭9, F7alt all do the same job. They belong on a shelf behind
+// one branch, not spread across four branches that all say the same thing.
+
+let variantHideTimer = null;
+
+function scheduleHideVariants() {
+  clearTimeout(variantHideTimer);
+  variantHideTimer = setTimeout(hideVariantMenu, 260);
+}
+
+function hideVariantMenu() {
+  document.getElementById('variant-menu')?.remove();
+}
+
+function showVariantMenu(branch, tipEl) {
+  clearTimeout(variantHideTimer);
+  hideVariantMenu();
+
+  const variants = branch.variants || [];
+  if (variants.length < 2) return;
+
+  const rect = tipEl.getBoundingClientRect();
+  const menu = document.createElement('div');
+  menu.id        = 'variant-menu';
+  menu.className = 'variant-menu';
+  menu.style.left = `${rect.right + 10}px`;
+  menu.style.top  = `${rect.top}px`;
+
+  const tierName = ['basic', 'colourful', 'complex'];
+  menu.innerHTML = `<div class="variant-menu-head">${branch.deviceLabel || 'Colourings'}</div>` +
+    variants.map((v, i) => `
+      <button class="variant-option${v.current ? ' current' : ''}" data-variant="${i}">
+        <span class="variant-name">${v.name}</span>
+        <span class="variant-tier">${tierName[v.tier]}</span>
+      </button>`).join('');
+
+  document.body.appendChild(menu);
+
+  menu.addEventListener('mouseenter', () => clearTimeout(variantHideTimer));
+  menu.addEventListener('mouseleave', scheduleHideVariants);
+
+  menu.querySelectorAll('.variant-option').forEach(btn => {
+    const v = variants[parseInt(btn.dataset.variant, 10)];
+    btn.addEventListener('mouseenter', () => window.VoiceMe?.cueFor(window.VoiceMe.soundingNotes(), v.notes));
+    btn.addEventListener('click', () => {
+      // Swap the colouring in place, keeping the device's motion intact.
+      const swapped = {
+        ...branch,
+        quality:  v.quality,
+        notes:    v.notes,
+        mapping:  v.mapping,
+        name:     branch.sequence.length > 1
+                    ? [v.name, ...branch.sequence.slice(1).map(s => s.name)].join(' → ')
+                    : v.name,
+        sequence: [{ ...branch.sequence[0], quality: v.quality, notes: v.notes,
+                     mapping: v.mapping, name: v.name },
+                   ...branch.sequence.slice(1)],
+      };
+      swapped.resolvesTo = swapped.sequence[swapped.sequence.length - 1];
+      hideVariantMenu();
+      selectBranch(swapped);
+    });
+  });
+}
+
+// ── Walking a device ───────────────────────────────────────────────────────
+
+function selectBranch(branch) {
+  compose.pending = { branch, step: 0 };
+  cueStep();
+  document.querySelectorAll('.branch-tip').forEach(t => t.classList.remove('pending'));
+  document.querySelector(`.branch-tip[data-branch-id="${branch.slot}"]`)?.classList.add('pending');
+}
+
+/** Light the current step of the pending device. */
+function cueStep() {
+  const { branch, step } = compose.pending;
+  const target = branch.sequence[step];
+
+  window.VoiceMe?.cueFor(window.VoiceMe.soundingNotes(), target.notes);
+  window.VoiceMe?.showArrows(target.mapping?.moved || []);
+
+  const total = branch.sequence.length;
+  updateStatus(total > 1
+    ? `Play ${target.name}   (${step + 1} of ${total} — ${branch.roman})`
+    : `Play ${target.name}`);
+}
+
+function advanceStep() {
+  const { branch, step } = compose.pending;
+  const played = branch.sequence[step];
+
+  window.VoiceMe?.flashGreen(played.notes);
+  playChimeSound();
+
+  if (step + 1 < branch.sequence.length) {
+    compose.pending.step = step + 1;
+    // Give the green flash a beat before re-cueing the next chord.
+    setTimeout(() => { if (compose.pending) cueStep(); }, 320);
+    return;
+  }
+  commitDevice(branch);
+}
+
+function commitDevice(branch) {
+  const group = ++compose.groupSeq;
+  branch.sequence.forEach(ch => {
+    compose.trail.push({
+      rootPC: ch.rootPC, quality: ch.quality, bassPc: ch.bassPc ?? null,
+      notes:  ch.notes,  name:    ch.name,
+      group,  device: branch.device, roman: branch.roman,
+    });
+  });
+
+  compose.pending = null;
+  renderComposition();
+
+  window.VoiceMe?.clearArrows();
+  window.VoiceMe?.clearCue();
+  floatChime();
+
+  const landed = branch.resolvesTo || branch.sequence[branch.sequence.length - 1];
+  triggerLeafFall(branch);
+
+  // The device's LAST chord becomes the new root — you build on where the
+  // move landed, not on where it started.
+  setTimeout(() => setCurrentChord(landed), 1200);
+}
+
+// ── Match detection ────────────────────────────────────────────────────────
 
 function checkComposeMatch(heldMidi) {
   if (!compose.active) return;
-
   const held = new Set(heldMidi);
 
-  // ── Commit path: waiting for the user to play a chosen suggestion ──
-  if (compose.awaitingPlay && compose.pendingChord) {
-    const target = new Set(compose.pendingChord.notes);
-    if (held.size === target.size && [...target].every(n => held.has(n))) {
-      commitPending();
-    }
+  if (compose.pending) {
+    const target = new Set(compose.pending.branch.sequence[compose.pending.step].notes);
+    if (held.size === target.size && [...target].every(n => held.has(n))) advanceStep();
     compose.prevHeld = held;
     return;
   }
 
-  // ── Seed path: only re-detect on an ATTACK (a newly-pressed note) ──
-  // Releasing keys (removals only) must never rebuild the tree — otherwise the
-  // suggestions vanish the instant the player lifts their hands to choose one.
+  // Only re-read on an ATTACK. Releasing keys must never rebuild the tree, or
+  // the suggestions vanish the moment you lift your hands to play one.
   const attack = [...held].some(n => !compose.prevHeld.has(n));
   compose.prevHeld = held;
   if (!attack) return;
@@ -375,12 +382,11 @@ function checkComposeMatch(heldMidi) {
   const detected = detectComposedChord(heldMidi);
   if (!detected) return;
 
-  const changed = !compose.currentChord ||
-                  detected.rootPC   !== compose.currentChord.rootPC ||
-                  detected.quality  !== compose.currentChord.quality;
-
+  const changed = !compose.currentChord
+               || detected.rootPC  !== compose.currentChord.rootPC
+               || detected.quality !== compose.currentChord.quality;
   if (changed) {
-    setTrailTip(detected);      // free-play sets/edits the current chord in the song
+    setTrailTip(detected);
     setCurrentChord(detected);
   }
 }
@@ -388,7 +394,7 @@ function checkComposeMatch(heldMidi) {
 function setCurrentChord(chord) {
   compose.currentChord = {
     ...chord,
-    name: chord.name || composeChordName(chord.rootPC, chord.quality),
+    name: chord.name || chordNameOf(chord.rootPC, chord.quality, chord.bassPc),
   };
   compose.branches = generateBranches(compose.currentChord);
   renderTree();
@@ -396,18 +402,20 @@ function setCurrentChord(chord) {
   updateStatus(compose.currentChord.name);
 }
 
-// The song is compose.trail = [seed, ...committed]; currentChord === trail[last].
-// Free-play sets/edits the current tip; commit appends; backspace pops.
 function setTrailTip(chord) {
-  const c = { rootPC: chord.rootPC, quality: chord.quality, notes: chord.notes,
-              name: chord.name || composeChordName(chord.rootPC, chord.quality) };
-  if (compose.trail.length === 0) compose.trail.push(c);
-  else compose.trail[compose.trail.length - 1] = c;
+  const entry = {
+    rootPC: chord.rootPC, quality: chord.quality, bassPc: chord.bassPc ?? null,
+    notes:  chord.notes,
+    name:   chord.name || chordNameOf(chord.rootPC, chord.quality, chord.bassPc),
+    group:  ++compose.groupSeq, device: null, roman: null,
+  };
+  if (compose.trail.length === 0) compose.trail.push(entry);
+  else compose.trail[compose.trail.length - 1] = entry;
 }
 
 function renderComposition() {
-  renderTrail();                                   // the chord-name ledger (full song)
-  const STAFF_WINDOW = 4;                           // staff shows the recent tail, not the whole song
+  renderTrail();
+  const STAFF_WINDOW = 4;
   if (compose.trail.length === 0) {
     window.VoiceMeNotation?.showComposition?.([], 0);
   } else {
@@ -416,19 +424,30 @@ function renderComposition() {
   }
 }
 
-// ── Backspace: pop the last chord, rewind the tree to its previous state ──
+// ── Backspace removes a whole device, not half of one ──────────────────────
+
 function backspaceCompose() {
   if (!compose.active || compose.trail.length === 0) return;
-  compose.trail.pop();
-  compose.awaitingPlay = false;
-  compose.pendingChord = null;
+
+  if (compose.pending) {           // abandon the walk before touching the trail
+    compose.pending = null;
+    window.VoiceMe?.clearCue();
+    window.VoiceMe?.clearArrows();
+    updateStatus(compose.currentChord ? compose.currentChord.name : '');
+    renderTree();
+    return;
+  }
+
+  const group = compose.trail[compose.trail.length - 1].group;
+  while (compose.trail.length && compose.trail[compose.trail.length - 1].group === group) {
+    compose.trail.pop();
+  }
+
+  window.VoiceMe?.clearCue();
   window.VoiceMe?.clearArrows();
-  window.VoiceMe?.clearHeldKeys();
-  window.VoiceMe?.clearReleasedKeys();
-  window.VoiceMe?.clearSuggestionKeys();
 
   if (compose.trail.length > 0) {
-    setCurrentChord(compose.trail[compose.trail.length - 1]);   // tree re-derives → identical rewind
+    setCurrentChord(compose.trail[compose.trail.length - 1]);
   } else {
     compose.currentChord = null;
     compose.branches = [];
@@ -438,216 +457,136 @@ function backspaceCompose() {
   }
 }
 
-function commitPending() {
-  const committed = compose.pendingChord;
-
-  compose.trail.push(committed);
-  compose.awaitingPlay = false;
-  compose.pendingChord = null;
-  renderComposition();                 // new chord lands on the ledger + staff at once
-
-  window.VoiceMe?.flashGreen(committed.notes);
-  window.VoiceMe?.clearArrows();
-  window.VoiceMe?.clearHeldKeys();
-  window.VoiceMe?.clearReleasedKeys();
-  window.VoiceMe?.clearSuggestionKeys();
-
-  playChimeSound();
-  floatChime();
-
-  // Trigger leaf fall animation on the played branch's tip
-  const playedBranch = compose.branches.find(b =>
-    JSON.stringify([...b.chord.notes].sort()) === JSON.stringify([...committed.notes].sort())
-  );
-  if (playedBranch) triggerLeafFall(playedBranch);
-
-  // After the animation, regenerate tree from new current chord
-  setTimeout(() => {
-    setCurrentChord(committed);
-  }, 1400);
-}
-
-// ── Leaf fall animation ───────────────────────────────────────────────────
+// ── Leaf fall ──────────────────────────────────────────────────────────────
 
 function triggerLeafFall(branch) {
-  const tip = document.querySelector(`.branch-tip[data-branch-id="${branch.id}"]`);
+  const tip = document.querySelector(`.branch-tip[data-branch-id="${branch.slot}"]`);
   if (!tip) return;
 
-  // Fade the chord letters out
-  const chordText = tip.querySelector('.branch-chord-text');
-  const labelText = tip.querySelector('.branch-label-text');
-
-  if (chordText) {
-    chordText.animate([
-      { opacity: 1 },
-      { opacity: 0 },
-    ], { duration: 400, fill: 'forwards' });
-  }
-  if (labelText) {
-    labelText.animate([
-      { opacity: 0.6 },
-      { opacity: 0 },
-    ], { duration: 400, fill: 'forwards' });
-  }
-
-  // Get the tip's position for leaf drop
   const svg = document.querySelector('.compose-tree-svg');
+  const chordText = tip.querySelector('.branch-chord-text');
   if (!svg || !chordText) return;
+
+  tip.querySelectorAll('text').forEach(t => {
+    t.animate([{ opacity: t.getAttribute('opacity') || 1 }, { opacity: 0 }], { duration: 400, fill: 'forwards' });
+  });
+
   const NS = 'http://www.w3.org/2000/svg';
+  const x  = parseFloat(chordText.getAttribute('x'));
+  const y  = parseFloat(chordText.getAttribute('y'));
 
-  const x = parseFloat(chordText.getAttribute('x'));
-  const y = parseFloat(chordText.getAttribute('y'));
-
-  // Small sparkle burst
-  const sparkle = document.createElementNS(NS, 'g');
-  sparkle.setAttribute('transform', `translate(${x}, ${y})`);
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
-    const line = document.createElementNS(NS, 'line');
-    line.setAttribute('x1', 0);
-    line.setAttribute('y1', 0);
-    line.setAttribute('x2', Math.cos(angle) * 10);
-    line.setAttribute('y2', Math.sin(angle) * 10);
-    line.setAttribute('stroke', 'var(--text-primary)');
-    line.setAttribute('stroke-width', '1');
-    line.setAttribute('stroke-linecap', 'round');
-    line.setAttribute('opacity', 0);
-    sparkle.appendChild(line);
-  }
-  svg.appendChild(sparkle);
-  sparkle.animate([
-    { opacity: 0, transform: `translate(${x}px, ${y}px) scale(0.4)` },
-    { opacity: 0.9, transform: `translate(${x}px, ${y}px) scale(1.2)`, offset: 0.3 },
-    { opacity: 0, transform: `translate(${x}px, ${y}px) scale(1.6)` },
-  ], { duration: 500 });
-  setTimeout(() => sparkle.remove(), 550);
-
-  // Leaf appears and falls
   setTimeout(() => {
-    const leaf = document.createElementNS(NS, 'g');
+    const leaf  = document.createElementNS(NS, 'g');
     leaf.setAttribute('class', 'compose-leaf');
-
-    // Leaf shape — a simple sketch-style leaf (a pointed oval)
-    const leafShape = document.createElementNS(NS, 'path');
-    leafShape.setAttribute('d', 'M 0 -6 Q 6 0 0 6 Q -6 0 0 -6 Z');
-    leafShape.setAttribute('fill', 'var(--text-primary)');
-    leafShape.setAttribute('opacity', '0.8');
-    leaf.appendChild(leafShape);
-
-    // Center vein
-    const vein = document.createElementNS(NS, 'line');
-    vein.setAttribute('x1', 0);
-    vein.setAttribute('y1', -6);
-    vein.setAttribute('x2', 0);
-    vein.setAttribute('y2', 6);
-    vein.setAttribute('stroke', 'var(--card-bg)');
-    vein.setAttribute('stroke-width', '0.5');
-    leaf.appendChild(vein);
-
+    const shape = document.createElementNS(NS, 'path');
+    shape.setAttribute('d', 'M 0 -6 Q 6 0 0 6 Q -6 0 0 -6 Z');
+    shape.setAttribute('fill', 'var(--text-primary)');
+    shape.setAttribute('opacity', '0.8');
+    leaf.appendChild(shape);
     leaf.setAttribute('transform', `translate(${x}, ${y})`);
     svg.appendChild(leaf);
 
-    // Random horizontal drift + rotation for paper-tumble feel
     const driftX = (Math.random() - 0.5) * 60;
     const fallY  = TREE_H - y + 40;
-
     leaf.animate([
-      { transform: `translate(${x}px, ${y}px) rotate3d(1, 0.5, 0.2, 0deg)`,   opacity: 0.8 },
-      { transform: `translate(${x + driftX * 0.4}px, ${y + fallY * 0.35}px) rotate3d(1, 0.5, 0.2, 180deg)`, opacity: 0.75, offset: 0.35 },
-      { transform: `translate(${x + driftX * 0.7}px, ${y + fallY * 0.65}px) rotate3d(0.6, 1, 0.4, 340deg)`, opacity: 0.55, offset: 0.65 },
-      { transform: `translate(${x + driftX}px, ${y + fallY}px) rotate3d(0.5, 1, 0.5, 540deg)`, opacity: 0 },
-    ], {
-      duration: 1000,
-      easing:   'cubic-bezier(0.3, 0.1, 0.55, 1)',
-      fill:     'forwards',
-    });
+      { transform: `translate(${x}px, ${y}px) rotate3d(1,0.5,0.2,0deg)`, opacity: 0.8 },
+      { transform: `translate(${x + driftX * 0.7}px, ${y + fallY * 0.65}px) rotate3d(0.6,1,0.4,340deg)`, opacity: 0.55, offset: 0.65 },
+      { transform: `translate(${x + driftX}px, ${y + fallY}px) rotate3d(0.5,1,0.5,540deg)`, opacity: 0 },
+    ], { duration: 1000, easing: 'cubic-bezier(0.3,0.1,0.55,1)', fill: 'forwards' });
 
     setTimeout(() => leaf.remove(), 1050);
   }, 300);
 }
 
-// ── Trail (committed chords ledger) ────────────────────────────────────────
+// ── Trail ledger ───────────────────────────────────────────────────────────
 
 function renderTrail() {
   const el = document.getElementById('compose-trail');
   if (!el) return;
+  if (compose.trail.length === 0) { el.innerHTML = ''; return; }
 
-  if (compose.trail.length === 0) {
-    el.innerHTML = '';
-    return;
-  }
-
-  el.innerHTML = compose.trail.map((c, i) => `
-    <span class="trail-chord" data-idx="${i}">${c.name}</span>
-    ${i < compose.trail.length - 1 ? '<span class="trail-arrow">·</span>' : ''}
-  `).join('');
+  el.innerHTML = compose.trail.map((c, i) => {
+    const startsDevice = c.device && (i === 0 || compose.trail[i - 1].group !== c.group);
+    const label = startsDevice ? `<span class="trail-device">${c.roman}</span>` : '';
+    return label + `<span class="trail-chord" data-idx="${i}">${c.name}</span>` +
+           (i < compose.trail.length - 1 ? '<span class="trail-arrow">·</span>' : '');
+  }).join('');
 }
-
-// ── Status line ───────────────────────────────────────────────────────────
 
 function updateStatus(text) {
   const el = document.getElementById('compose-status');
   if (el) el.textContent = text || '';
 }
 
-// ── Chime + checkmark (borrowed from panel.js) ─────────────────────────────
+function playChimeSound() { window.PanelChime?.(); }
+function floatChime()     { window.PanelCheck?.(); }
 
-function playChimeSound() {
-  if (window.PanelChime) window.PanelChime();
+// ── Dials ──────────────────────────────────────────────────────────────────
+
+function regenerate() {
+  if (!compose.currentChord) return;
+  compose.branches = generateBranches(compose.currentChord);
+  renderTree();
 }
-function floatChime() {
-  if (window.PanelCheck) window.PanelCheck();
-}
 
-// ── Spice dial — harmonic richness of the voicings & suggestions ──────────
-
-function initSpiceDial() {
-  const container = document.getElementById('spice-dial');
-  if (!container) return;
-
-  const stops = [
-    { v: 0, label: 'Basic',    title: 'Triads — no added 7ths unless you play them' },
-    { v: 1, label: 'Colorful', title: '7ths, 9ths and sus — the jazz staples' },
-    { v: 2, label: 'Complex',  title: 'Altered dominants and 13th voicings' },
-  ];
-
-  container.innerHTML = stops.map(s => `
-    <button class="spice-btn ${s.v === compose.spice ? 'active' : ''}" data-spice="${s.v}" title="${s.title}">
-      ${s.label}
-    </button>
-  `).join('');
-
-  container.querySelectorAll('.spice-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      compose.spice = parseInt(btn.dataset.spice, 10);
-      container.querySelectorAll('.spice-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      // Re-voice the tree's suggestions at the new spice level
-      if (compose.currentChord) {
-        compose.branches = generateBranches(compose.currentChord);
-        renderTree();
-      }
+function initDials() {
+  const spiceEl = document.getElementById('spice-dial');
+  if (spiceEl) {
+    const stops = [
+      { v: 0, label: 'Basic',    title: 'Triads and plain 7ths — no altered dominants volunteered' },
+      { v: 1, label: 'Colorful', title: '9ths, 6/9 and sus — the jazz staples' },
+      { v: 2, label: 'Complex',  title: 'Altered dominants, 13ths, lydian' },
+    ];
+    spiceEl.innerHTML = stops.map(s =>
+      `<button class="spice-btn ${s.v === compose.spice ? 'active' : ''}" data-spice="${s.v}" title="${s.title}">${s.label}</button>`
+    ).join('');
+    spiceEl.querySelectorAll('.spice-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        compose.spice = parseInt(btn.dataset.spice, 10);
+        spiceEl.querySelectorAll('.spice-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        regenerate();
+      });
     });
-  });
+  }
+
+  // Shape is the other half of the pair: spice picks WHICH notes, shape picks
+  // HOW they spread. They are independent, so both need a control.
+  const shapeEl = document.getElementById('shape-dial');
+  if (shapeEl) {
+    const shapes = [
+      { v: 'minimal', label: 'Minimal', title: 'Root and guide tones only' },
+      { v: 'closed',  label: 'Closed',  title: 'Tight stack, textbook' },
+      { v: 'open',    label: 'Open',    title: 'Wide spacing, bass well below' },
+      { v: 'cluster', label: 'Cluster', title: 'Dense, chord tone in the bass' },
+    ];
+    shapeEl.innerHTML = shapes.map(s =>
+      `<button class="spice-btn ${s.v === compose.shape ? 'active' : ''}" data-shape="${s.v}" title="${s.title}">${s.label}</button>`
+    ).join('');
+    shapeEl.querySelectorAll('.spice-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        compose.shape = btn.dataset.shape;
+        shapeEl.querySelectorAll('.spice-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        regenerate();
+      });
+    });
+  }
 }
 
-// ── Activation ────────────────────────────────────────────────────────────
+// ── Activation ─────────────────────────────────────────────────────────────
 
 function activateCompose() {
-  compose.active = true;
+  compose.active   = true;
   compose.prevHeld = new Set();
   document.body.classList.add('compose-mode');
 
-  const panel = document.getElementById('voicing-panel');
-  if (panel?.classList.contains('open')) {
+  if (document.getElementById('voicing-panel')?.classList.contains('open')) {
     document.getElementById('panel-tab')?.click();
   }
+  window.VoiceMePanel?.exitProgression?.();
 
-  if (window.VoiceMePanel?.exitProgression) {
-    window.VoiceMePanel.exitProgression();
-  }
-
-  initSpiceDial();
+  initDials();
   updateComposeBtn();
   updateStatus('Play a chord to grow the tree');
   renderTree();
@@ -655,21 +594,16 @@ function activateCompose() {
 }
 
 function deactivateCompose() {
-  compose.active       = false;
-  compose.currentChord = null;
-  compose.branches     = [];
-  compose.trail        = [];
-  compose.awaitingPlay = false;
-  compose.pendingChord = null;
-  compose.prevHeld     = new Set();
-
+  Object.assign(compose, {
+    active: false, currentChord: null, branches: [], trail: [],
+    pending: null, prevHeld: new Set(),
+  });
   document.body.classList.remove('compose-mode');
+  hideVariantMenu();
 
-  window.VoiceMe?.clearSuggestionKeys();
-  window.VoiceMe?.clearHeldKeys();
-  window.VoiceMe?.clearReleasedKeys();
+  window.VoiceMe?.clearCue();
   window.VoiceMe?.clearArrows();
-  window.VoiceMeNotation?.returnToLive?.();     // clear the composition staff
+  window.VoiceMeNotation?.returnToLive?.();
 
   updateComposeBtn();
   const tree  = document.getElementById('compose-tree');
@@ -680,8 +614,7 @@ function deactivateCompose() {
 }
 
 function toggleCompose() {
-  if (compose.active) deactivateCompose();
-  else                 activateCompose();
+  compose.active ? deactivateCompose() : activateCompose();
 }
 
 function updateComposeBtn() {
@@ -691,23 +624,20 @@ function updateComposeBtn() {
   btn.textContent = compose.active ? '✕ Exit Compose' : '✎ Compose with me';
 }
 
-// ── Button wiring ─────────────────────────────────────────────────────────
+// ── Wiring ─────────────────────────────────────────────────────────────────
 
 document.getElementById('compose-btn')?.addEventListener('click', toggleCompose);
 document.getElementById('compose-backspace')?.addEventListener('click', backspaceCompose);
 
-// Backspace key removes the last chord (when not typing in a field)
 document.addEventListener('keydown', (e) => {
-  if (!compose.active) return;
-  if (e.key === 'Backspace') {
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-    e.preventDefault();
-    backspaceCompose();
-  }
+  if (!compose.active || e.key !== 'Backspace') return;
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  e.preventDefault();
+  backspaceCompose();
 });
 
-// ── Export ────────────────────────────────────────────────────────────────
+window.VoiceMeBus?.on('notes', checkComposeMatch);
 
 window.Compose = {
   checkMatch: checkComposeMatch,

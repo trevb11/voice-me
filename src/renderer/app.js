@@ -1,20 +1,75 @@
 /**
  * app.js
- * Renderer process entry point.
- * Wires MIDI events → piano visuals + chord detection.
+ * Renderer entry point: MIDI in, keyboard out.
+ *
+ * This file owns the piano and nothing else. Chord theory lives in harmony.js;
+ * app.js only knows how to light a key and how to tell everyone else what is
+ * being played.
+ *
+ * ── Talking to the rest of the app ─────────────────────────────────────────
+ *
+ * Note changes go out on a bus (`VoiceMeBus`), not as a hardcoded list of
+ * calls into every consumer. app.js used to end each note event with a
+ * `notifyPanel()` that named the panel, compose mode and the notation staff
+ * directly — so adding a feature meant editing this file, and compose mode
+ * could only talk back through twenty imperative lighting calls.
+ *
+ * ── Lighting ───────────────────────────────────────────────────────────────
+ *
+ * There is ONE cue object and ONE repaint. Previously three independent sets
+ * (suggestion / held / released) each had their own clear function, and those
+ * functions disagreed about which layer won — so clearing gold also wiped blue
+ * and grey, and whichever set painted last covered the others. Now every key's
+ * colour is a pure function of (is it down?, what does the cue say?), so the
+ * layers cannot fight.
  */
 
+// ── Bus ────────────────────────────────────────────────────────────────────
+
+const bus = (() => {
+  const listeners = {};
+  return {
+    on(event, fn)   { (listeners[event] = listeners[event] || []).push(fn); },
+    emit(event, data) { (listeners[event] || []).forEach(fn => { try { fn(data); } catch (e) { console.error(`[bus:${event}]`, e); } }); },
+  };
+})();
+window.VoiceMeBus = bus;
+
+// ── MIDI bridge ────────────────────────────────────────────────────────────
+// Supplied by preload.js under Electron. Stubbed when absent so the renderer
+// can be opened directly in a browser for UI work — and so a preload failure
+// shows up as "no MIDI device" rather than a blank window.
+
+const midiBridge = window.midi || {
+  getPorts:       () => Promise.resolve([]),
+  connectPort:    () => {},
+  refresh:        () => Promise.resolve([]),
+  onEvent:        () => {},
+  onPorts:        () => {},
+  onConnected:    () => {},
+  onDisconnected: () => {},
+  onError:        () => {},
+};
+if (!window.midi) console.warn('[app] no MIDI bridge — running without hardware input');
+
 // ── Init piano ─────────────────────────────────────────────────────────────
+
 Piano.renderPiano();
 const keyMap = Piano.buildKeyMap();
+const allMidi = Object.keys(keyMap).map(Number);
 
 // ── State ──────────────────────────────────────────────────────────────────
-let   showBassNote = false;
-const heldNotes    = new Map();   // midi → velocity
-let   sustainPedal = false;
-const sustainedNotes = new Set(); // notes held by pedal after key release
+
+let   showBassNote   = false;
+const heldNotes      = new Map();   // midi → velocity
+let   sustainPedal   = false;
+const sustainedNotes = new Set();   // held by the pedal after key release
+
+// The single source of truth for suggestion colours.
+const cue = { hold: [], press: [], lift: [] };
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
+
 const statusDot   = document.getElementById('midi-status');
 const midiLabel   = document.getElementById('midi-label');
 const portSelect  = document.getElementById('port-select');
@@ -24,45 +79,107 @@ const chordType   = document.getElementById('chord-type');
 const chordAlt    = document.getElementById('chord-alt');
 const heldNotesEl = document.getElementById('held-notes');
 
+// ── Colours ────────────────────────────────────────────────────────────────
+// Semantic state, deliberately literal: these mean something regardless of theme.
+
+const INK = {
+  hold:    { black: '#3B82F6', white: '#93C5FD' },   // keep this down
+  press:   { black: '#F59E0B', white: '#FDE68A' },   // press this
+  lift:    { black: '#52525B', white: '#E5E7EB' },   // let this go
+  correct: { black: '#22C55E', white: '#86EFAC' },   // you got it
+};
+
+function isBlackKey(el) { return el.classList.contains('key-black'); }
+function defaultFill(el) { return isBlackKey(el) ? 'url(#bk-grad)' : 'url(#wk-grad)'; }
+
+/**
+ * What colour should this key be right now?
+ *
+ * A total function of the two things that matter — whether the key is down,
+ * and what the cue asks of it. Every case is listed, so no combination can
+ * fall through to whichever layer happened to paint last.
+ */
+function fillFor(midi) {
+  const el = keyMap[midi];
+  if (!el) return null;
+  const black = isBlackKey(el);
+  const down  = heldNotes.has(midi) || sustainedNotes.has(midi);
+
+  const wantHold  = cue.hold.includes(midi);
+  const wantPress = cue.press.includes(midi);
+  const wantLift  = cue.lift.includes(midi);
+
+  if (down) {
+    if (wantLift)  return INK.lift[black ? 'black' : 'white'];      // still down, should not be
+    if (wantHold)  return INK.hold[black ? 'black' : 'white'];      // correctly held
+    if (wantPress) return INK.correct[black ? 'black' : 'white'];   // just landed it
+    return Piano.velocityToColor(heldNotes.get(midi) || 64, black);
+  }
+  if (wantHold)  return INK.hold[black ? 'black' : 'white'];        // press and hold
+  if (wantPress) return INK.press[black ? 'black' : 'white'];       // press
+  return defaultFill(el);                                          // lift cue, already lifted
+}
+
+function repaintKey(midi) {
+  const el = keyMap[midi];
+  if (!el) return;
+  const fill = fillFor(midi);
+  if (fill) el.setAttribute('fill', fill);
+  el.classList.toggle('active', heldNotes.has(midi) || sustainedNotes.has(midi));
+}
+
+function repaint() { allMidi.forEach(repaintKey); }
+
+/**
+ * Set the whole cue at once. Callers describe the destination, not a sequence
+ * of paint operations — there is no ordering to get wrong.
+ */
+function setCue(next) {
+  cue.hold  = (next && next.hold)  || [];
+  cue.press = (next && next.press) || [];
+  cue.lift  = (next && next.lift)  || [];
+  repaint();
+}
+
+function clearCue() { setCue(null); }
+
 // ── MIDI event handling ────────────────────────────────────────────────────
 
-window.midi.onEvent((event) => {
+midiBridge.onEvent((event) => {
   if (event.type === 'noteOn') {
     noteOn(event.note, event.velocity);
   } else if (event.type === 'noteOff') {
     noteOff(event.note);
-  } else if (event.type === 'controlChange') {
-    // CC 64 = sustain pedal
-    if (event.note === 64) {
-      sustainPedal = event.velocity >= 64;
-      if (!sustainPedal) {
-        sustainedNotes.forEach(midi => {
-          lightKey(midi, 0, false);
-          window.AudioEngine?.stopNote(midi);
-        });
-        sustainedNotes.clear();
-      }
+  } else if (event.type === 'controlChange' && event.note === 64) {
+    sustainPedal = event.velocity >= 64;
+    if (!sustainPedal) {
+      const releasing = [...sustainedNotes];
+      sustainedNotes.clear();
+      releasing.forEach(midi => {
+        heldNotes.delete(midi);
+        window.AudioEngine?.stopNote(midi);
+        repaintKey(midi);
+      });
+      announce();
     }
   }
 });
 
-window.midi.onPorts((ports) => {
-  populatePortSelect(ports);
-});
+midiBridge.onPorts(populatePortSelect);
 
-window.midi.onConnected(({ portIndex, portName }) => {
-  statusDot.className  = 'status-dot connected';
+midiBridge.onConnected(({ portIndex, portName }) => {
+  statusDot.className   = 'status-dot connected';
   midiLabel.textContent = portName;
   portSelect.value      = portIndex;
 });
 
-window.midi.onDisconnected(() => {
+midiBridge.onDisconnected(() => {
   statusDot.className   = 'status-dot disconnected';
   midiLabel.textContent = 'No MIDI device';
   portSelect.value      = '';
 });
 
-window.midi.onError((msg) => {
+midiBridge.onError((msg) => {
   midiLabel.textContent = `MIDI error: ${msg}`;
   statusDot.className   = 'status-dot disconnected';
 });
@@ -71,12 +188,10 @@ window.midi.onError((msg) => {
 
 function noteOn(midi, velocity) {
   heldNotes.set(midi, velocity);
-  lightKey(midi, velocity, true);
   sustainedNotes.delete(midi);
   window.AudioEngine?.startNote(midi, velocity);
-  updateNoteStrip();
-  updateChordDisplay();
-  notifyPanel();
+  repaintKey(midi);
+  announce();
 }
 
 function noteOff(midi) {
@@ -85,566 +200,98 @@ function noteOff(midi) {
   } else {
     heldNotes.delete(midi);
     window.AudioEngine?.stopNote(midi);
-
-    const el = keyMap[midi];
-    if (el) {
-      const isBlack = el.classList.contains('key-black');
-      // Restore to whichever suggestion state applies — gold, blue, gray, or default
-      if (suggestionKeys.has(midi)) {
-        el.setAttribute('fill', isBlack ? '#F59E0B' : '#FDE68A');
-      } else if (heldSuggestionKeys.has(midi)) {
-        el.setAttribute('fill', isBlack ? '#3B82F6' : '#93C5FD');
-      } else if (releasedKeys.has(midi)) {
-        el.setAttribute('fill', isBlack ? '#52525B' : '#E5E7EB');
-      } else {
-        el.setAttribute('fill', isBlack ? 'url(#bk-grad)' : 'url(#wk-grad)');
-      }
-      el.classList.remove('active');
-    }
   }
-  updateNoteStrip();
-  updateChordDisplay();
-  notifyPanel();
+  repaintKey(midi);
+  announce();
 }
 
-function notifyPanel() {
-      const allHeld = [...new Set([...heldNotes.keys(), ...sustainedNotes])];
-      window.VoiceMePanel?.checkMatch(allHeld);
-      window.VoiceMePanel?.checkProgressionMatch(allHeld);
-      window.Compose?.checkMatch(allHeld);
-      window.VoiceMePanel?.checkInTheWild(allHeld);
-      window.VoiceMeNotation?.updateHeldNotes(allHeld);
-    }
-
-
-// ── Key lighting ───────────────────────────────────────────────────────────
-
-function lightKey(midi, velocity, on) {
-  const el = keyMap[midi];
-  if (!el) return;
-
-  const isBlack = el.classList.contains('key-black');
-
-  if (on) {
-    // If this is a held-suggestion key, keep it blue instead of magenta
-    if (heldSuggestionKeys?.has(midi)) {
-      el.setAttribute('fill', isBlack ? '#3B82F6' : '#93C5FD');
-    } else {
-      const color = Piano.velocityToColor(velocity, isBlack);
-      el.setAttribute('fill', color);
-    }
-    el.classList.add('active');
-  } else {
-    el.setAttribute('fill', isBlack ? 'url(#bk-grad)' : 'url(#wk-grad)');
-    el.classList.remove('active');
-  }
+function soundingNotes() {
+  return [...new Set([...heldNotes.keys(), ...sustainedNotes])].sort((a, b) => a - b);
 }
 
-// ── Note strip (held note pills) ───────────────────────────────────────────
+/** Tell the rest of the app what is sounding. One event, any number of listeners. */
+function announce() {
+  const notes = soundingNotes();
+  updateNoteStrip(notes);
+  updateChordDisplay(notes);
+  bus.emit('notes', notes);
+}
 
-function updateNoteStrip() {
-  const allHeld = new Set([...heldNotes.keys(), ...sustainedNotes]);
+// ── Note strip + chord readout ─────────────────────────────────────────────
+
+function updateNoteStrip(notes) {
   heldNotesEl.innerHTML = '';
-
-  [...allHeld].sort((a, b) => a - b).forEach(midi => {
-    const semitone = midi % 12;
-    const octave   = Math.floor(midi / 12) - 1;
-    const useSharp = Piano.SHARP_ROOT_PCS.has(semitone);
-    const name     = Piano.getNoteName(semitone, useSharp) + octave;
-    const pill     = document.createElement('span');
+  notes.forEach(midi => {
+    const pill = document.createElement('span');
     pill.className   = 'note-pill';
-    pill.textContent = name;
+    pill.textContent = Harmony.midiName(midi);
     heldNotesEl.appendChild(pill);
   });
 }
 
-function updateChordDisplay() {
-  const allHeld = [...new Set([...heldNotes.keys(), ...sustainedNotes])];
-
-  if (allHeld.length === 0) {
+function updateChordDisplay(notes) {
+  if (notes.length === 0) {
     chordName.textContent = '—';
     chordType.textContent = '';
     chordAlt.textContent  = '';
     return;
   }
 
-  const chord = detectChord(allHeld);
+  const chord = Harmony.describe(notes, { showBass: showBassNote });
   if (chord) {
     chordName.textContent = chord.display;
     chordType.textContent = chord.quality;
     chordAlt.textContent  = chord.altDisplay ?? '';
     chordName.style.color = 'var(--text-primary)';
-  } else if (allHeld.length === 1) {
-    const midi     = allHeld[0];
-    const semitone = midi % 12;
-    const octave   = Math.floor(midi / 12) - 1;
-    const useSharp = Piano.SHARP_ROOT_PCS.has(semitone);
-    chordName.textContent = Piano.getNoteName(semitone, useSharp) + octave;
+    return;
+  }
+
+  chordName.style.color = 'var(--text-muted)';
+  chordAlt.textContent  = '';
+  if (notes.length === 1) {
+    chordName.textContent = Harmony.midiName(notes[0]);
     chordType.textContent = 'note';
-    chordAlt.textContent  = '';
-    chordName.style.color = 'var(--text-muted)';
   } else {
     chordName.textContent = '?';
-    chordType.textContent = `${allHeld.length} notes`;
-    chordAlt.textContent  = '';
-    chordName.style.color = 'var(--text-muted)';
+    chordType.textContent = `${notes.length} notes`;
   }
 }
 
-// ── Chord detection ────────────────────────────────────────────────────────
-// Identifies common chord types from a set of MIDI notes.
-
-const CHORD_PATTERNS = [
-  // ── Triads ────────────────────────────────────────────────────────────
-  { intervals: [0,4,7],            name: '',         quality: 'maj',      priority: 10 },
-  { intervals: [0,3,7],            name: 'm',        quality: 'min',      priority: 10 },
-  { intervals: [0,3,6],            name: 'dim',      quality: 'dim',      priority: 10 },
-  { intervals: [0,4,8],            name: 'aug',      quality: 'aug',      priority: 10 },
-  { intervals: [0,2,7],            name: 'sus2',     quality: 'sus',      priority: 7  },
-  { intervals: [0,5,7],            name: 'sus4',     quality: 'sus',      priority: 7  },
-
-  // ── 6th chords ────────────────────────────────────────────────────────
-  { intervals: [0,4,7,9],          name: '6',        quality: 'maj6',     priority: 9  },
-  { intervals: [0,3,7,9],          name: 'm6',       quality: 'min6',     priority: 9  },
-
-  // ── 7th chords ────────────────────────────────────────────────────────
-  { intervals: [0,4,7,11],         name: 'maj7',     quality: 'maj7',     priority: 12 },
-  { intervals: [0,3,7,10],         name: 'm7',       quality: 'min7',     priority: 12 },
-  { intervals: [0,4,7,10],         name: '7',        quality: 'dom7',     priority: 12 },
-  { intervals: [0,3,7,11],         name: 'mM7',      quality: 'minMaj7',  priority: 11 },
-  { intervals: [0,3,6,9],          name: 'dim7',     quality: 'dim7',     priority: 11 },
-  { intervals: [0,3,6,10],         name: 'm7b5',     quality: 'hdim',     priority: 11 },
-  { intervals: [0,4,8,10],         name: 'aug7',     quality: 'aug7',     priority: 10 },
-  { intervals: [0,5,7,10],         name: '7sus4',    quality: 'sus7',     priority: 15 },
-  { intervals: [0,2,5,10],         name: '9sus4',    quality: 'sus9',     priority: 16 },
-  { intervals: [0,2,5,7,10],       name: '9sus4',    quality: 'sus9',     priority: 17 },
-
-  // ── Altered dominants ─────────────────────────────────────────────────
-  { intervals: [0,4,7,10,1],       name: '7b9',      quality: 'alt',      priority: 13 },
-  { intervals: [0,4,7,10,3],       name: '7#9',      quality: 'alt',      priority: 13 },
-  { intervals: [0,4,6,10],         name: '7b5',      quality: 'alt',      priority: 11 },
-  { intervals: [0,4,6,10,2],       name: '9b5',      quality: 'alt',      priority: 12 },
-  { intervals: [0,4,8,10,2],       name: '9#5',      quality: 'alt',      priority: 12 },
-  { intervals: [0,4,6,10,1],       name: '7b5b9',    quality: 'alt',      priority: 13 },
-  { intervals: [0,4,6,10,3],       name: '7b5#9',    quality: 'alt',      priority: 13 },
-  { intervals: [0,4,8,10,1],       name: '7#5b9',    quality: 'alt',      priority: 13 },
-  { intervals: [0,4,8,10,3],       name: '7#5#9',    quality: 'alt',      priority: 13 },
-  { intervals: [0,4,7,10,6],       name: '7#11',     quality: 'lydian7',  priority: 12 },
-  { intervals: [0,4,7,10,1,6],     name: '7b9#11',   quality: 'alt',      priority: 14 },
-  { intervals: [0,4,7,10,3,6],     name: '7#9#11',   quality: 'alt',      priority: 14 },
-
-  // ── 9th chords ────────────────────────────────────────────────────────
-  { intervals: [0,4,7,11,2],       name: 'maj9',     quality: 'maj9',     priority: 13 },
-  { intervals: [0,3,7,10,2],       name: 'm9',       quality: 'min9',     priority: 13 },
-  { intervals: [0,4,7,10,2],       name: '9',        quality: 'dom9',     priority: 13 },
-  { intervals: [0,3,7,11,2],       name: 'mM9',      quality: 'minMaj9',  priority: 12 },
-  { intervals: [0,4,7,9,2],        name: '6/9',      quality: 'maj69',    priority: 11 },
-  { intervals: [0,3,7,9,2],        name: 'm6/9',     quality: 'min69',    priority: 11 },
-  { intervals: [0,4,7,2],          name: 'add9',     quality: 'add9',     priority: 8  },
-  { intervals: [0,3,7,2],          name: 'madd9',    quality: 'add9',     priority: 8  },
-
-  // ── 11th chords ───────────────────────────────────────────────────────
-  { intervals: [0,4,7,10,2,5],     name: '11',       quality: 'dom11',    priority: 13 },
-  { intervals: [0,3,7,10,2,5],     name: 'm11',      quality: 'min11',    priority: 13 },
-  { intervals: [0,4,7,11,2,5],     name: 'maj11',    quality: 'maj11',    priority: 12 },
-  { intervals: [0,4,7,11,6],       name: 'maj7#11',  quality: 'lydian',   priority: 13 },
-  { intervals: [0,4,7,11,2,6],     name: 'maj9#11',  quality: 'lydian',   priority: 14 },
-  // Cluster voicing: root b3 11 5 13 b7 — no 9th (e.g. Fmin11 cluster)
-  { intervals: [0,3,5,7,9,10],     name: 'm11',      quality: 'min11',    priority: 12 },
-
-  // ── 13th chords ───────────────────────────────────────────────────────
-  { intervals: [0,4,7,10,2,5,9],   name: '13',       quality: 'dom13',    priority: 13 },
-  // ── Dominant chords with parenthetical extensions ──────────────────────
-  { intervals: [0,4,10,2,9],       name: '9(13)',     quality: 'dom13',    priority: 16 },
-  { intervals: [0,4,10,1,9],       name: '7b9(13)',   quality: 'alt',      priority: 16 },
-  { intervals: [0,4,10,3,9],       name: '7#9(13)',   quality: 'alt',      priority: 16 },
-  { intervals: [0,4,10,1,8],       name: '7b9(b13)',  quality: 'alt',      priority: 16 },
-  { intervals: [0,4,10,3,8],       name: '7#9(b13)',  quality: 'alt',      priority: 16 },
-  { intervals: [0,4,10,2,8],       name: '9(b13)',    quality: 'alt',      priority: 16 },
-  { intervals: [0,3,7,10,2,5,9],   name: 'm13',      quality: 'min13',    priority: 13 },
-  { intervals: [0,4,7,11,2,9],     name: 'maj13',    quality: 'maj13',    priority: 12 },
-  { intervals: [0,4,7,10,9],       name: '13',       quality: 'dom13',    priority: 11 },
-];
-
-function detectChord(midiNotes) {
-  if (midiNotes.length < 2) return null;
-
-  const sorted       = [...midiNotes].sort((a, b) => a - b);
-  const bassPC       = sorted[0] % 12;
-  const pitchClasses = [...new Set(sorted.map(m => m % 12))];
-  if (pitchClasses.length < 2) return null;
-
-  // ── Primary: best root-based chord match ──────────────────────────────
-  const rootMatch = findBestChord(pitchClasses, bassPC);
-  if (!rootMatch) return trySlashChord(pitchClasses, bassPC);
-
-  // A chord without a third is harmonically indeterminate — don't name it
-  // Exception: sus chords explicitly replace the third with a 2nd or 4th
-  const isSus        = rootMatch.quality.startsWith('sus');
-  const intervalsFromRoot = new Set(pitchClasses.map(pc => (pc - rootMatch.rootPC + 12) % 12));
-  const hasThird     = intervalsFromRoot.has(3) || intervalsFromRoot.has(4);
-  if (!hasThird && !isSus) return trySlashChord(pitchClasses, bassPC);
-
-  const useSharp     = Piano.SHARP_ROOT_PCS.has(rootMatch.rootPC);
-  const rootName     = Piano.getNoteName(rootMatch.rootPC, useSharp);
-  const bassName     = Piano.getNoteName(bassPC, useSharp);
-  const isInversion  = bassPC !== rootMatch.rootPC;
-  const rootChordStr = Piano.musicalGlyphs(rootName + rootMatch.suffix);
-
-  let slashStr = null;
-  let altStr   = null;
-
-  // ── Inversion: chord/bass ─────────────────────────────────────────────
-  if (isInversion) {
-    slashStr = Piano.musicalGlyphs(rootChordStr + '/' + bassName);
-    // Try reading bass as root for the alternative name
-    const bassAsRoot = findBestChordWithRoot(pitchClasses, bassPC);
-    if (bassAsRoot) {
-      const bassUseSharp = Piano.SHARP_ROOT_PCS.has(bassPC);
-      const bassRootStr  = Piano.getNoteName(bassPC, bassUseSharp) + bassAsRoot.suffix;
-      if (bassRootStr !== rootChordStr) altStr = bassRootStr;
-    }
-  }
-
-  // ── Upper-voice triad slash chord (e.g. Eb/F = also F9sus4) ──────────
-  // Only when exactly 3 notes sit above the bass (total 4 notes)
-  if (!isInversion && pitchClasses.length === 4) {
-    const upperPCs = pitchClasses.filter(pc => pc !== bassPC);
-    if (upperPCs.length === 3) {
-      const upperTriad = findCleanTriad(upperPCs);
-      if (upperTriad) {
-        const uSharp    = Piano.SHARP_ROOT_PCS.has(upperTriad.rootPC);
-        const uRoot     = Piano.getNoteName(upperTriad.rootPC, uSharp);
-        const uBass     = Piano.getNoteName(bassPC, uSharp);
-        const upperSlash = uRoot + upperTriad.suffix + '/' + uBass;
-        if (upperSlash !== rootChordStr) {
-          slashStr = upperSlash;
-          altStr   = rootChordStr;
-        }
-      }
-    }
-  }
-
-  function findBestChord(pitchClasses, bassPC) {
-  let best = null, bestScore = -Infinity;
-  for (const rootPC of pitchClasses) {
-    const intervals = new Set(pitchClasses.map(pc => (pc - rootPC + 12) % 12));
-    for (const pattern of CHORD_PATTERNS) {
-      const patternSet    = new Set(pattern.intervals);
-      const coreIntervals = pattern.intervals.filter(i => i !== 7);
-      let coreMatched = 0;
-      for (const i of coreIntervals) if (intervals.has(i)) coreMatched++;
-      const required = coreIntervals.length <= 3 ? coreIntervals.length : coreIntervals.length - 1;
-      if (coreMatched < required) continue;
-      const fifthPresent  = intervals.has(7) && patternSet.has(7);
-      const totalMatched  = coreMatched + (fifthPresent ? 1 : 0);
-      let extra = 0;
-      for (const i of intervals) if (!patternSet.has(i)) extra++;
-      const coreMissing   = coreIntervals.length - coreMatched;
-      const cleanBonus    = (extra === 0 && coreMissing === 0) ? 15 : 0;
-      const dominantBonus = intervals.has(10) && intervals.has(4) && !intervals.has(11) ? 10 : 0;
-      const bassRootBonus = (bassPC !== undefined && rootPC === bassPC) ? 20 : 0;
-      const score = totalMatched * 10 + pattern.priority + cleanBonus + dominantBonus + bassRootBonus - extra * 5 - coreMissing * 5;
-      if (score > bestScore) { bestScore = score; best = { rootPC, suffix: pattern.name, quality: pattern.quality }; }
-    }
-  }
-  return best;
-}
-
-function findBestChordWithRoot(pitchClasses, rootPC) {
-  const intervals = new Set(pitchClasses.map(pc => (pc - rootPC + 12) % 12));
-  let best = null, bestScore = -Infinity;
-  for (const pattern of CHORD_PATTERNS) {
-    const patternSet    = new Set(pattern.intervals);
-    const coreIntervals = pattern.intervals.filter(i => i !== 7);
-    let coreMatched = 0;
-    for (const i of coreIntervals) if (intervals.has(i)) coreMatched++;
-    const required = coreIntervals.length <= 3 ? coreIntervals.length : coreIntervals.length - 1;
-    if (coreMatched < required) continue;
-    const fifthPresent = intervals.has(7) && patternSet.has(7);
-    const totalMatched = coreMatched + (fifthPresent ? 1 : 0);
-    let extra = 0;
-    for (const i of intervals) if (!patternSet.has(i)) extra++;
-    const coreMissing   = coreIntervals.length - coreMatched;
-    const cleanBonus    = (extra === 0 && coreMissing === 0) ? 15 : 0;
-    const dominantBonus = intervals.has(10) && intervals.has(4) && !intervals.has(11) ? 10 : 0;
-    const bassRootBonus = (bassPC !== undefined && rootPC === bassPC) ? 30 : 0;
-    const score = totalMatched * 10 + pattern.priority + cleanBonus + dominantBonus + bassRootBonus - extra * 5 - coreMissing * 5;
-    if (score > bestScore) { bestScore = score; best = { suffix: pattern.name, quality: pattern.quality }; }
-  }
-  return best;
-}
-
-function findCleanTriad(pcs) {
-  const TRIADS = CHORD_PATTERNS.filter(p => p.intervals.length <= 3);
-  let best = null, bestScore = -Infinity;
-  for (const rootPC of pcs) {
-    const intervals = new Set(pcs.map(pc => (pc - rootPC + 12) % 12));
-    for (const pattern of TRIADS) {
-      const patternSet = new Set(pattern.intervals);
-      let matched = 0;
-      for (const i of patternSet) if (intervals.has(i)) matched++;
-      if (matched < pattern.intervals.length) continue;
-      let extra = 0;
-      for (const i of intervals) if (!patternSet.has(i)) extra++;
-      if (extra > 0) continue;
-      const score = matched * 10 + pattern.priority + 15;
-      if (score > bestScore) { bestScore = score; best = { rootPC, suffix: pattern.name, quality: pattern.quality }; }
-    }
-  }
-  return best;
-}
-
-function trySlashChord(pitchClasses, bassPC) {
-  if (pitchClasses.length < 3) return null;
-  const upperPCs = pitchClasses.filter(pc => pc !== bassPC);
-  if (upperPCs.length < 3) return null;
-  const upperTriad = findCleanTriad(upperPCs);
-  if (!upperTriad) return null;
-  const uSharp = Piano.SHARP_ROOT_PCS.has(upperTriad.rootPC);
-  const uRoot  = Piano.getNoteName(upperTriad.rootPC, uSharp);
-  const uBass  = Piano.getNoteName(bassPC, uSharp);
-  return {
-    display:    showBassNote ? uRoot + upperTriad.suffix + '/' + uBass : uRoot + upperTriad.suffix,
-    altDisplay: null,
-    quality:    upperTriad.quality,
-    root:       uRoot,
-    suffix:     upperTriad.suffix,
-  };
-}
-
-  // ── Build display ─────────────────────────────────────────────────────
-  const display    = (showBassNote && slashStr) ? slashStr : rootChordStr;
-  const altDisplay = (showBassNote && altStr)   ? 'also: ' + altStr : null;
-
-  return { display, altDisplay, quality: rootMatch.quality, root: rootName, suffix: rootMatch.suffix };
-}
-
-
-// ── Public chord identification (root PC + canonical quality) ───────────────
-// Same CHORD_PATTERNS + fifth-optional, best-match scoring as the display path,
-// but returns { rootPC, quality, suffix, bassPC, notes } for compose mode.
-function identifyChordPC(midiNotes) {
-  if (!midiNotes || midiNotes.length < 2) return null;
-  const sorted = [...midiNotes].sort((a, b) => a - b);
-  const bassPC = sorted[0] % 12;
-  const pcs    = [...new Set(sorted.map(m => m % 12))];
-  if (pcs.length < 2) return null;
-
-  let best = null, bestScore = -Infinity;
-  for (const rootPC of pcs) {
-    const intervals = new Set(pcs.map(pc => (pc - rootPC + 12) % 12));
-    for (const pattern of CHORD_PATTERNS) {
-      const patternSet    = new Set(pattern.intervals);
-      const coreIntervals = pattern.intervals.filter(i => i !== 7);   // 5th optional
-      let coreMatched = 0;
-      for (const i of coreIntervals) if (intervals.has(i)) coreMatched++;
-      const required = coreIntervals.length <= 3 ? coreIntervals.length : coreIntervals.length - 1;
-      if (coreMatched < required) continue;
-      const fifthPresent  = intervals.has(7) && patternSet.has(7);
-      const totalMatched  = coreMatched + (fifthPresent ? 1 : 0);
-      let extra = 0;
-      for (const i of intervals) if (!patternSet.has(i)) extra++;
-      const coreMissing   = coreIntervals.length - coreMatched;
-      const cleanBonus    = (extra === 0 && coreMissing === 0) ? 15 : 0;
-      const dominantBonus = intervals.has(10) && intervals.has(4) && !intervals.has(11) ? 10 : 0;
-      const bassRootBonus = rootPC === bassPC ? 20 : 0;
-      const score = totalMatched * 10 + pattern.priority + cleanBonus + dominantBonus + bassRootBonus - extra * 5 - coreMissing * 5;
-      if (score > bestScore) { bestScore = score; best = { rootPC, suffix: pattern.name, quality: pattern.quality }; }
-    }
-  }
-  if (!best) return null;
-  // A chord with no third (and not a sus) is harmonically indeterminate — skip it
-  const iv    = new Set(pcs.map(pc => (pc - best.rootPC + 12) % 12));
-  const isSus = best.quality.startsWith('sus') || best.suffix.startsWith('sus');
-  if (!iv.has(3) && !iv.has(4) && !isSus) return null;
-  return { rootPC: best.rootPC, quality: best.quality, suffix: best.suffix, bassPC, notes: sorted };
-}
-
-
-// ── Port picker ────────────────────────────────────────────────────────────
-
-function populatePortSelect(ports) {
-  portSelect.innerHTML = '<option value="">— select device —</option>';
-  ports.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value       = p.index;
-    opt.textContent = p.name;
-    portSelect.appendChild(opt);
-  });
-  if (ports.length === 1) {
-    portSelect.value = 0;
-  }
-}
-
-portSelect.addEventListener('change', () => {
-  const val = portSelect.value;
-  if (val !== '') window.midi.connectPort(parseInt(val, 10));
-});
-
-const bassNoteBtn = document.getElementById('bass-note-btn');
-bassNoteBtn.addEventListener('click', () => {
-  showBassNote = !showBassNote;
-  bassNoteBtn.classList.toggle('active', showBassNote);
-  updateChordDisplay();
-});
-
-refreshBtn.addEventListener('click', async () => {
-  refreshBtn.textContent = '…';
-  const ports = await window.midi.refresh();
-  populatePortSelect(ports || []);
-  refreshBtn.textContent = '↺';
-});
-
-// ── Initial port load ──────────────────────────────────────────────────────
-
-window.midi.getPorts().then(ports => {
-  if (ports && ports.length > 0) populatePortSelect(ports);
-});
-
-// ── Suggestion key lighting (gold) ────────────────────────────────────────
-
-let suggestionKeys = new Set();
-
-function setSuggestionKeys(notes) {
-  clearSuggestionKeys();
-  notes.forEach(midi => {
-    const el = keyMap[midi];
-    if (!el) return;
-    const isBlack = el.classList.contains('key-black');
-    el.setAttribute('fill', isBlack ? '#F59E0B' : '#FDE68A');
-    suggestionKeys.add(midi);
-  });
-}
-
-function clearSuggestionKeys() {
-  suggestionKeys.forEach(midi => {
-    const el = keyMap[midi];
-    if (!el) return;
-    const isBlack = el.classList.contains('key-black');
-    if (!heldNotes.has(midi) && !sustainedNotes.has(midi)) {
-      el.setAttribute('fill', isBlack ? 'url(#bk-grad)' : 'url(#wk-grad)');
-    }
-  });
-  suggestionKeys.clear();
-}
-
-function flashGreen(notes) {
-  notes.forEach(midi => {
-    const el = keyMap[midi];
-    if (!el) return;
-    const isBlack = el.classList.contains('key-black');
-    el.setAttribute('fill', isBlack ? '#22C55E' : '#86EFAC');
-  });
-  setTimeout(() => {
-    notes.forEach(midi => {
-      const el = keyMap[midi];
-      if (!el) return;
-      const isBlack = el.classList.contains('key-black');
-      if (heldNotes.has(midi) || sustainedNotes.has(midi)) {
-        el.setAttribute('fill', Piano.velocityToColor(heldNotes.get(midi) || 64, isBlack));
-      } else if (suggestionKeys.has(midi)) {
-        el.setAttribute('fill', isBlack ? '#F59E0B' : '#FDE68A');
-      } else {
-        el.setAttribute('fill', isBlack ? 'url(#bk-grad)' : 'url(#wk-grad)');
-      }
-    });
-  }, 600);
-}
-
-// ── Expose API for panel.js ────────────────────────────────────────────────
-
-// ── Held key lighting (blue — keep holding these) ─────────────────────────
-
-let heldSuggestionKeys = new Set();
-
-function setHeldKeys(notes) {
-  clearHeldKeys();
-  notes.forEach(midi => {
-    const el = keyMap[midi];
-    if (!el) return;
-    const isBlack = el.classList.contains('key-black');
-    el.setAttribute('fill', isBlack ? '#3B82F6' : '#93C5FD');
-    heldSuggestionKeys.add(midi);
-  });
-}
-
-function clearHeldKeys() {
-  heldSuggestionKeys.forEach(midi => {
-    const el      = keyMap[midi];
-    if (!el) return;
-    const isBlack = el.classList.contains('key-black');
-    if (heldNotes.has(midi) || sustainedNotes.has(midi)) {
-      el.setAttribute('fill', Piano.velocityToColor(heldNotes.get(midi) || 64, isBlack));
-    } else {
-      el.setAttribute('fill', isBlack ? 'url(#bk-grad)' : 'url(#wk-grad)');
-    }
-  });
-  heldSuggestionKeys.clear();
-}
-
-// ── Released key lighting (gray — lift these fingers) ─────────────────────
-
-let releasedKeys = new Set();
-
-function setReleasedKeys(notes) {
-  clearReleasedKeys();
-  notes.forEach(midi => {
-    const el      = keyMap[midi];
-    if (!el) return;
-    const isBlack = el.classList.contains('key-black');
-    el.setAttribute('fill', isBlack ? '#52525B' : '#E5E7EB');
-    releasedKeys.add(midi);
-  });
-}
-
-function clearReleasedKeys() {
-  releasedKeys.forEach(midi => {
-    const el      = keyMap[midi];
-    if (!el) return;
-    const isBlack = el.classList.contains('key-black');
-    if (heldNotes.has(midi) || sustainedNotes.has(midi)) {
-      el.setAttribute('fill', Piano.velocityToColor(heldNotes.get(midi) || 64, isBlack));
-    } else if (suggestionKeys.has(midi)) {
-      el.setAttribute('fill', isBlack ? '#F59E0B' : '#FDE68A');
-    } else {
-      el.setAttribute('fill', isBlack ? 'url(#bk-grad)' : 'url(#wk-grad)');
-    }
-  });
-  releasedKeys.clear();
-}
-
-// ── Arrow rendering ────────────────────────────────────────────────────────
+// ── Voice-leading arrows ───────────────────────────────────────────────────
 
 function getKeyX(midi) {
   const el = keyMap[midi];
   if (!el) return null;
-  const x  = parseFloat(el.getAttribute('x'));
-  const w  = parseFloat(el.getAttribute('width'));
-  return x + w / 2;
+  return parseFloat(el.getAttribute('x')) + parseFloat(el.getAttribute('width')) / 2;
 }
 
-function showArrows(fromNotes, toNotes) {
-  clearArrows();
-  const svg     = document.getElementById('piano');
-  const arrowY  = 22;
+function ensureArrowMarker(svg) {
+  if (svg.querySelector('#vm-arrowhead')) return;
+  const NS     = 'http://www.w3.org/2000/svg';
+  const marker = document.createElementNS(NS, 'marker');
+  marker.setAttribute('id',          'vm-arrowhead');
+  marker.setAttribute('markerWidth', '6');
+  marker.setAttribute('markerHeight','6');
+  marker.setAttribute('refX',        '5');
+  marker.setAttribute('refY',        '3');
+  marker.setAttribute('orient',      'auto');
+  const poly = document.createElementNS(NS, 'path');
+  poly.setAttribute('d',    'M 0 0 L 6 3 L 0 6 z');
+  poly.setAttribute('fill', INK.press.black);
+  marker.appendChild(poly);
+  svg.querySelector('defs')?.appendChild(marker);
+}
 
-  let marker = svg.querySelector('#vm-arrowhead');
-  if (!marker) {
-    const defs = svg.querySelector('defs');
-    marker     = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-    marker.setAttribute('id',          'vm-arrowhead');
-    marker.setAttribute('markerWidth', '6');
-    marker.setAttribute('markerHeight','6');
-    marker.setAttribute('refX',        '5');
-    marker.setAttribute('refY',        '3');
-    marker.setAttribute('orient',      'auto');
-    const poly = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    poly.setAttribute('d',    'M 0 0 L 6 3 L 0 6 z');
-    poly.setAttribute('fill', '#F59E0B');
-    marker.appendChild(poly);
-    defs?.appendChild(marker);
-  }
+/**
+ * Draw the voice-leading arrows from a mapping's `moved` pairs.
+ *
+ * Takes the mapping directly rather than two bare note lists: the mapping
+ * already knows which voice went where, so there is no need to re-guess it by
+ * nearest-pitch matching (which got it wrong whenever voices crossed).
+ */
+function showArrows(moved) {
+  const svg = document.getElementById('piano');
+  ensureArrowMarker(svg);
 
   let group = document.getElementById('vm-arrows');
   if (!group) {
@@ -652,35 +299,19 @@ function showArrows(fromNotes, toNotes) {
     group.setAttribute('id', 'vm-arrows');
     svg.appendChild(group);
   }
+  group.innerHTML = '';
 
-  const usedTo = new Set();
-  fromNotes.forEach(from => {
-    const x1 = getKeyX(from);
-    if (x1 === null) return;
-
-    let nearestTo = null;
-    let minDist   = Infinity;
-    toNotes.forEach(to => {
-      if (usedTo.has(to)) return;
-      const dist = Math.abs(from - to);
-      if (dist < minDist) { minDist = dist; nearestTo = to; }
-    });
-
-    if (nearestTo === null) return;
-    usedTo.add(nearestTo);
-
-    const x2   = getKeyX(nearestTo);
-    if (x2 === null) return;
-
-    const cx   = (x1 + x2) / 2;
-    const cy   = arrowY - 14;
+  const arrowY = 22;
+  (moved || []).forEach(({ from, to }) => {
+    const x1 = getKeyX(from), x2 = getKeyX(to);
+    if (x1 === null || x2 === null || from === to) return;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d',           `M ${x1},${arrowY} Q ${cx},${cy} ${x2},${arrowY}`);
-    path.setAttribute('stroke',      '#F59E0B');
-    path.setAttribute('stroke-width','1.5');
-    path.setAttribute('fill',        'none');
-    path.setAttribute('marker-end',  'url(#vm-arrowhead)');
-    path.setAttribute('opacity',     '0.85');
+    path.setAttribute('d',            `M ${x1},${arrowY} Q ${(x1 + x2) / 2},${arrowY - 14} ${x2},${arrowY}`);
+    path.setAttribute('stroke',       INK.press.black);
+    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('fill',         'none');
+    path.setAttribute('marker-end',   'url(#vm-arrowhead)');
+    path.setAttribute('opacity',      '0.85');
     group.appendChild(path);
   });
 }
@@ -690,17 +321,94 @@ function clearArrows() {
   if (group) group.innerHTML = '';
 }
 
-// ── Expose API for panel.js ────────────────────────────────────────────────
+/**
+ * Arrows between two chords with no mapping available — the voicing library's
+ * progressions are fixed voicings, not engine output, so pair the departing
+ * and arriving voices by nearest pitch.
+ */
+function showArrowsBetween(fromNotes, toNotes) {
+  const fromSet = new Set(fromNotes), toSet = new Set(toNotes);
+  const leaving  = fromNotes.filter(n => !toSet.has(n)).sort((a, b) => a - b);
+  const arriving = toNotes.filter(n => !fromSet.has(n));
+  const moved = [];
+  leaving.forEach(from => {
+    let best = -1, bestDist = Infinity;
+    arriving.forEach((to, i) => {
+      if (to === null) return;
+      const d = Math.abs(from - to);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    if (best >= 0) { moved.push({ from, to: arriving[best] }); arriving[best] = null; }
+  });
+  showArrows(moved);
+}
+
+/** Flash a chord green, then fall back to whatever the cue says. */
+function flashGreen(notes) {
+  notes.forEach(midi => {
+    const el = keyMap[midi];
+    if (el) el.setAttribute('fill', INK.correct[isBlackKey(el) ? 'black' : 'white']);
+  });
+  setTimeout(() => notes.forEach(repaintKey), 600);
+}
+
+// ── Port picker ────────────────────────────────────────────────────────────
+
+function populatePortSelect(ports) {
+  portSelect.innerHTML = '<option value="">— select device —</option>';
+  (ports || []).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value       = p.index;
+    opt.textContent = p.name;
+    portSelect.appendChild(opt);
+  });
+  if (ports && ports.length === 1) portSelect.value = 0;
+}
+
+portSelect.addEventListener('change', () => {
+  if (portSelect.value !== '') midiBridge.connectPort(parseInt(portSelect.value, 10));
+});
+
+const bassNoteBtn = document.getElementById('bass-note-btn');
+bassNoteBtn.addEventListener('click', () => {
+  showBassNote = !showBassNote;
+  bassNoteBtn.classList.toggle('active', showBassNote);
+  updateChordDisplay(soundingNotes());
+});
+
+refreshBtn.addEventListener('click', async () => {
+  refreshBtn.textContent = '…';
+  populatePortSelect(await midiBridge.refresh());
+  refreshBtn.textContent = '↺';
+});
+
+midiBridge.getPorts().then(populatePortSelect);
+
+// ── Public API ─────────────────────────────────────────────────────────────
 
 window.VoiceMe = {
-  setSuggestionKeys,
-  clearSuggestionKeys,
-  setHeldKeys,
-  clearHeldKeys,
+  // Lighting — declarative. Describe the destination, not the steps.
+  setCue,
+  clearCue,
+  cueFor(prevNotes, targetNotes) { setCue(Harmony.fingering(prevNotes, targetNotes)); },
   flashGreen,
-  setReleasedKeys,
-  clearReleasedKeys,
   showArrows,
+  showArrowsBetween,
   clearArrows,
-  identifyChord: identifyChordPC,
+
+  // State
+  soundingNotes,
+
+  // Chord reading — delegated to harmony.js, kept here for existing callers.
+  identifyChord: notes => Harmony.identify(notes),
+};
+
+// ── Test hook ──────────────────────────────────────────────────────────────
+// Drives the app as if MIDI arrived. Used by the harness to exercise compose
+// mode without a keyboard plugged in.
+window.VoiceMeTestInput = {
+  press(notes, velocity = 80) { notes.forEach(n => noteOn(n, velocity)); },
+  release(notes)              { notes.forEach(n => noteOff(n)); },
+  releaseAll()                { soundingNotes().forEach(n => noteOff(n)); },
+  play(notes, velocity = 80)  { this.releaseAll(); this.press(notes, velocity); },
 };

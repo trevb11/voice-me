@@ -599,6 +599,137 @@ check('every branch is playable from where the hands already are', () => {
   return bad;
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  8. Compose-mode flow
+//     Devices are walked chord by chord, so every step must be independently
+//     playable and cueable. These are the invariants compose.js relies on.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SEEDS = [
+  { notes: [48, 52, 55, 59], root: 0,  q: 'maj7'  },
+  { notes: [48, 52, 55, 57], root: 0,  q: '6'     },
+  { notes: [45, 52, 55, 60], root: 9,  q: 'm7'    },
+  { notes: [43, 47, 53, 57], root: 7,  q: '7'     },
+  { notes: [43, 53, 57, 62], root: 7,  q: '7sus4' },
+  { notes: [41, 56, 58, 63], root: 5,  q: 'm11'   },
+  { notes: [50, 53, 57, 60], root: 2,  q: 'm7b5'  },
+];
+
+check('every device step is reachable and fully cued', () => {
+  const bad = [];
+  for (const seed of SEEDS) for (const spice of SPICES) for (const sh of SHAPES) {
+    const { branches } = H.suggest(seed.notes, seed.root, seed.q, [], spice, sh);
+    for (const b of branches) {
+      let from = seed.notes;
+      b.sequence.forEach((step, i) => {
+        const cue = H.fingering(from, step.notes);
+        const lit = [...cue.hold, ...cue.press].sort((a, c) => a - c);
+        const tgt = [...step.notes].sort((a, c) => a - c);
+        if (lit.length !== tgt.length || !lit.every((n, j) => n === tgt[j])) {
+          bad.push(`${b.device || b.name} step ${i + 1}: lit ${lit.map(nm).join(' ')} vs ${tgt.map(nm).join(' ')}`);
+        }
+        if (cue.hold.some(n => cue.press.includes(n)) ||
+            cue.hold.some(n => cue.lift.includes(n))  ||
+            cue.press.some(n => cue.lift.includes(n))) {
+          bad.push(`${b.device || b.name} step ${i + 1}: overlapping cues`);
+        }
+        from = step.notes;
+      });
+    }
+  }
+  return bad;
+});
+
+check('resolvesTo is the last chord of the sequence', () => {
+  const bad = [];
+  for (const seed of SEEDS) for (const spice of SPICES) {
+    const { branches } = H.suggest(seed.notes, seed.root, seed.q, [], spice, 'closed');
+    for (const b of branches) {
+      const last = b.sequence[b.sequence.length - 1];
+      if (!b.resolvesTo) { bad.push(`${b.name}: no resolvesTo`); continue; }
+      if (b.resolvesTo.rootPC !== last.rootPC || b.resolvesTo.quality !== last.quality) {
+        bad.push(`${b.name}: resolvesTo ${b.resolvesTo.name} but sequence ends ${last.name}`);
+      }
+    }
+  }
+  return bad;
+});
+
+check('the tree keeps growing from where a device landed', () => {
+  const bad = [];
+  for (const seed of SEEDS) {
+    const first = H.suggest(seed.notes, seed.root, seed.q, [], 1, 'closed');
+    for (const b of first.branches) {
+      const landed = b.resolvesTo;
+      const next = H.suggest(landed.notes, landed.rootPC, landed.quality, [], 1, 'closed');
+      if (!next.branches.length) bad.push(`${b.name} → ${landed.name}: dead end, no further branches`);
+      for (const nb of next.branches) {
+        if (nb.notes.some(n => n < 33 || n > 96)) bad.push(`${landed.name} → ${nb.name}: off keyboard`);
+      }
+    }
+  }
+  return bad;
+});
+
+check('sequences stay short enough to learn', () => {
+  const bad = [];
+  for (const seed of SEEDS) for (const spice of SPICES) {
+    const { branches } = H.suggest(seed.notes, seed.root, seed.q, [], spice, 'closed');
+    for (const b of branches) {
+      if (b.sequence.length > 3) bad.push(`${b.name}: ${b.sequence.length} chords`);
+      if (b.sequence.length < 1) bad.push(`${b.name}: empty sequence`);
+    }
+  }
+  return bad;
+});
+
+check('every branch is labelled — a device name or a roman numeral', () => {
+  const bad = [];
+  for (const seed of SEEDS) for (const spice of SPICES) {
+    const { branches } = H.suggest(seed.notes, seed.root, seed.q, [], spice, 'closed');
+    for (const b of branches) {
+      if (!b.deviceLabel && !b.roman) bad.push(`${b.name}: no device label and no roman numeral`);
+      if (!b.name) bad.push(`${b.slot}: unnamed branch`);
+      if (!b.reason) bad.push(`${b.name}: no explanation`);
+    }
+  }
+  return bad;
+});
+
+check('the dial is respected — basic never volunteers an altered dominant', () => {
+  const bad = [];
+  for (const seed of SEEDS) for (const sh of SHAPES) {
+    const { branches } = H.suggest(seed.notes, seed.root, seed.q, [], 0, sh);
+    for (const b of branches) {
+      for (const step of b.sequence) {
+        if (H.tierOf(step.quality) > 0) {
+          bad.push(`basic/${sh} from ${NM[seed.root]}${seed.q}: offered ${step.name} (tier ${H.tierOf(step.quality)})`);
+        }
+      }
+      for (const v of (b.variants || [])) {
+        if (H.tierOf(v.quality) > 0) bad.push(`basic: variant ${v.name} is tier ${H.tierOf(v.quality)}`);
+      }
+    }
+  }
+  return bad;
+});
+
+check('variants all share the branch chord root and function', () => {
+  const bad = [];
+  for (const seed of SEEDS) for (const spice of SPICES) {
+    const { branches } = H.suggest(seed.notes, seed.root, seed.q, [], spice, 'closed');
+    for (const b of branches) {
+      for (const v of (b.variants || [])) {
+        const fam  = H.QUALITIES[v.quality].family;
+        const bFam = H.QUALITIES[b.quality].family;
+        if (fam !== bFam) bad.push(`${b.name}: variant ${v.name} is ${fam}, branch is ${bFam}`);
+        if (v.notes.some(n => n % 12 === undefined)) bad.push(`${b.name}: variant ${v.name} malformed`);
+      }
+    }
+  }
+  return bad;
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log('');

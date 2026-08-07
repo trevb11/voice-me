@@ -263,12 +263,12 @@ function formatNoteNames(notes) {
 function lightSuggestionKeys(notes) {
   clearSuggestionKeys();
   suggestionNotes = notes;
-  window.VoiceMe?.setSuggestionKeys(notes);
+  window.VoiceMe?.setCue({ press: notes });
 }
 
 function clearSuggestionKeys() {
   suggestionNotes = [];
-  window.VoiceMe?.clearSuggestionKeys();
+  window.VoiceMe?.clearCue();
 }
 
 // ── Match detection ────────────────────────────────────────────────────────
@@ -570,7 +570,7 @@ function renderProgressionActive() {
 
   document.getElementById('prog-exit')?.addEventListener('click', () => {
     progState.active = false;
-    window.VoiceMe?.clearSuggestionKeys();
+    window.VoiceMe?.clearCue();
     renderProgressionsHome();
   });
   document.getElementById('prog-rekey')?.addEventListener('click', () => {
@@ -580,7 +580,7 @@ function renderProgressionActive() {
     progState.chords        = [];
     progState.tonicPC       = null;
     progState.keyName       = null;
-    window.VoiceMe?.clearSuggestionKeys();
+    window.VoiceMe?.clearCue();
     renderProgressionActive();
   });
 }
@@ -640,7 +640,7 @@ function setProgressionKey(tonicPC) {
   });
 
   renderProgressionActive();
-  window.VoiceMe?.setSuggestionKeys(progState.chords[0].notes);
+  window.VoiceMe?.setCue({ press: progState.chords[0].notes });
   window.VoiceMeNotation?.showProgression(progState.chords, 0);
   window.VoiceMeNotation?.showChord(progState.chords[0].notes);
 }
@@ -661,29 +661,19 @@ function advanceProgression() {
   setTimeout(() => {
     if (nextIdx >= progState.chords.length) {
       progState.done = true;
-      window.VoiceMe?.clearSuggestionKeys();
-      window.VoiceMe?.clearHeldKeys();
-      window.VoiceMe?.clearReleasedKeys();
+      window.VoiceMe?.clearCue();
       window.VoiceMe?.clearArrows();
       updateProgCard(nextIdx - 1);
       document.getElementById('prog-vl').textContent = '';
       return;
     }
 
-    const next       = progState.chords[nextIdx];
-    const currentSet = new Set(current.notes);
-    const nextSet    = new Set(next.notes);
+    const next = progState.chords[nextIdx];
 
-    const newNotes      = next.notes.filter(n => !currentSet.has(n));
-    const commonNotes   = next.notes.filter(n => currentSet.has(n));
-    const releasedNotes = current.notes.filter(n => !nextSet.has(n));
-
-    window.VoiceMe?.clearReleasedKeys();
-    window.VoiceMe?.clearHeldKeys();
-    window.VoiceMe?.setSuggestionKeys(newNotes);
-    window.VoiceMe?.setHeldKeys(commonNotes);
-    window.VoiceMe?.setReleasedKeys(releasedNotes);
-    window.VoiceMe?.showArrows(releasedNotes, newNotes);
+    // One call: the cue is derived by set difference, so hold/press/lift
+    // cannot disagree with each other or with the chord being asked for.
+    window.VoiceMe?.cueFor(current.notes, next.notes);
+    window.VoiceMe?.showArrowsBetween(current.notes, next.notes);
 
     updateProgCard(nextIdx - 1);
     updateProgCard(nextIdx);
@@ -717,9 +707,7 @@ function checkProgressionMatch(heldMidi) {
 function exitProgression() {
       if (progState.active) {
         progState.active = false;
-        window.VoiceMe?.clearSuggestionKeys();
-        window.VoiceMe?.clearHeldKeys();
-        window.VoiceMe?.clearReleasedKeys();
+        window.VoiceMe?.clearCue();
         window.VoiceMe?.clearArrows();
         window.VoiceMeNotation?.returnToLive();
         window.VoiceMeNotation?.pulseChord(progState.chords.length - 1);
@@ -729,3 +717,12 @@ function exitProgression() {
     window.PanelChime = playChime;
     window.PanelCheck = floatCheckmark;
     window.VoiceMePanel = { checkMatch, checkInTheWild, checkProgressionMatch, exitProgression };
+
+
+// ── Listen for what is being played ────────────────────────────────────────
+// app.js broadcasts; it does not know this file exists.
+window.VoiceMeBus?.on('notes', (notes) => {
+  checkMatch(notes);
+  checkProgressionMatch(notes);
+  checkInTheWild(notes);
+});

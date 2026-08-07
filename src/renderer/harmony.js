@@ -94,6 +94,14 @@
     '6':        { family: 'major',
                   core: [[0,'root'],[4,'3rd'],[9,'6th'],[7,'5th']],
                   ext:  [[2,'9th',2]] },
+    // maj6/9 is a modal chord, not a dressed-up major triad: it is a stable
+    // resting sonority with no leading tone, which is what lets it hang
+    // between tonal centres (Shorter, "Mahjong" — C6/9 ⇄ Dm11 all the way
+    // down). C6/9 is a strict SUBSET of Dm11, so the two trade places with
+    // nothing moving but the bass. See the `modal-oscillation` device.
+    '6/9':      { family: 'major',
+                  core: [[0,'root'],[4,'3rd'],[9,'6th'],[2,'9th'],[7,'5th']],
+                  ext:  [] },
     'm6':       { family: 'minor',
                   core: [[0,'root'],[3,'3rd'],[9,'6th'],[7,'5th']],
                   ext:  [[2,'9th',2]] },
@@ -102,6 +110,13 @@
     'maj7':     { family: 'major',
                   core: [[0,'root'],[4,'3rd'],[11,'7th'],[7,'5th']],
                   ext:  [[2,'9th',1],[6,'♯11',2],[9,'13th',2]] },
+    // The lydian sonority, with NO natural 5th — the ♯11 replaces it rather
+    // than colouring it. This is the chord that turns up when a minor chord
+    // slides its bass down a half step (Fm11 → Emaj7♯11) and it needs to be
+    // voiceable in its own right, not folded into maj9.
+    'maj7#11':  { family: 'major',
+                  core: [[0,'root'],[4,'3rd'],[6,'♯11'],[11,'7th']],
+                  ext:  [[2,'9th',1],[9,'13th',2]] },
     'm7':       { family: 'minor',
                   core: [[0,'root'],[3,'3rd'],[10,'7th'],[7,'5th']],
                   ext:  [[2,'9th',1],[5,'11th',2]] },
@@ -111,9 +126,12 @@
     'mMaj7':    { family: 'minor',
                   core: [[0,'root'],[3,'3rd'],[11,'7th'],[7,'5th']],
                   ext:  [[2,'9th',1]] },
+    // No natural 11 extension: "Cm11♭5" is not a chord anyone plays, and
+    // generating it just produced a rotation of E♭m6/9 that the recogniser then
+    // (correctly) named E♭m6/9. The four core tones are the chord.
     'm7b5':     { family: 'minor',   rigid5: true,
                   core: [[0,'root'],[3,'3rd'],[6,'5th'],[10,'7th']],
-                  ext:  [[5,'11th',2]] },
+                  ext:  [] },
     'dim7':     { family: 'dim',     rigid5: true,
                   core: [[0,'root'],[3,'3rd'],[6,'5th'],[9,'7th']],
                   ext:  [] },
@@ -161,6 +179,43 @@
                   core: [[0,'root'],[4,'3rd'],[10,'7th'],[3,'♯9'],[8,'♭13']],
                   ext:  [] },
   };
+
+  // ── Spice tier of each quality ──────────────────────────────────────────
+  // Which dial setting is allowed to VOLUNTEER this chord. The dial has always
+  // gated extensions within a chord; this gates the chord choice itself, so
+  // "basic" never hands you a 7♯9♭13 you did not ask for.
+  //
+  //   0 basic      triads and plain 7ths
+  //   1 colourful  9ths, 6/9, sus, minor-major
+  //   2 complex    altered dominants, 13ths, lydian
+  //
+  // Recognition is NOT gated — if you play it, the app names it. The dial only
+  // governs what the app suggests.
+  const TIER = {
+    'maj': 0, 'min': 0, 'dim': 0, '6': 0, 'm6': 0,
+    'maj7': 0, 'm7': 0, '7': 0, 'm7b5': 0, 'dim7': 0,
+    'aug': 1, 'mMaj7': 1, '7sus4': 1, 'maj9': 1, 'm9': 1, 'm11': 1, '9': 1, '6/9': 1,
+    'maj7#11': 2, '13': 2,
+    '7alt': 2, '7b9': 2, '7#9': 2,
+    '7b9(13)': 2, '7b9(b13)': 2, '7#9(13)': 2, '7#9(b13)': 2,
+  };
+  const tierOf = q => (TIER[q] == null ? 1 : TIER[q]);
+
+  // Where a quality falls back to when the dial is turned below its tier.
+  // Same function, less colour — F7♯9 becomes F7, not something unrelated.
+  const PLAINER = {
+    '7alt': '7', '7b9': '7', '7#9': '7',
+    '7b9(13)': '7b9', '7b9(b13)': '7b9', '7#9(13)': '7#9', '7#9(b13)': '7#9',
+    '13': '9', '9': '7', 'maj9': 'maj7', 'maj7#11': 'maj9',
+    'm9': 'm7', 'm11': 'm9', '6/9': '6', 'mMaj7': 'm7', '7sus4': '7', 'aug': 'maj',
+  };
+
+  function atSpice(quality, spice) {
+    const max = spice == null ? 1 : spice;
+    let q = quality, guard = 0;
+    while (QUALITIES[q] && tierOf(q) > max && PLAINER[q] && guard++ < 8) q = PLAINER[q];
+    return QUALITIES[q] ? q : quality;
+  }
 
   // ── Recognition patterns ────────────────────────────────────────────────
   // What the ear should NAME, which is finer-grained than what we can VOICE.
@@ -212,8 +267,10 @@
     { intervals: [0,3,7,10,2],     suffix: 'm9',      quality: 'min9',    priority: 13, voiceAs: 'm9' },
     { intervals: [0,4,7,10,2],     suffix: '9',       quality: 'dom9',    priority: 13, voiceAs: '9'  },
     { intervals: [0,3,7,11,2],     suffix: 'mM9',     quality: 'minMaj9', priority: 12, voiceAs: 'mMaj7' },
-    { intervals: [0,4,7,9,2],      suffix: '6/9',     quality: 'maj69',   priority: 11, voiceAs: 'maj9' },
-    { intervals: [0,3,7,9,2],      suffix: 'm6/9',    quality: 'min69',   priority: 11, voiceAs: 'm9'   },
+    // 6/9 voices as a 6 chord carrying its 9th — NOT as maj9, which has a
+    // major 7th in it and is a different chord.
+    { intervals: [0,4,7,9,2],      suffix: '6/9',     quality: 'maj69',   priority: 11, voiceAs: '6/9'  },
+    { intervals: [0,3,7,9,2],      suffix: 'm6/9',    quality: 'min69',   priority: 11, voiceAs: 'm6'   },
     { intervals: [0,4,7,2],        suffix: 'add9',    quality: 'add9',    priority: 8,  voiceAs: 'maj'  },
     { intervals: [0,3,7,2],        suffix: 'madd9',   quality: 'add9',    priority: 8,  voiceAs: 'min'  },
 
@@ -221,8 +278,9 @@
     { intervals: [0,4,7,10,2,5],   suffix: '11',      quality: 'dom11',   priority: 13, voiceAs: '9'    },
     { intervals: [0,3,7,10,2,5],   suffix: 'm11',     quality: 'min11',   priority: 13, voiceAs: 'm11'  },
     { intervals: [0,4,7,11,2,5],   suffix: 'maj11',   quality: 'maj11',   priority: 12, voiceAs: 'maj9' },
-    { intervals: [0,4,7,11,6],     suffix: 'maj7#11', quality: 'lydian',  priority: 13, voiceAs: 'maj9' },
-    { intervals: [0,4,7,11,2,6],   suffix: 'maj9#11', quality: 'lydian',  priority: 14, voiceAs: 'maj9' },
+    { intervals: [0,4,7,11,6],     suffix: 'maj7#11', quality: 'lydian',  priority: 13, voiceAs: 'maj7#11' },
+    { intervals: [0,4,11,6],       suffix: 'maj7#11', quality: 'lydian',  priority: 14, voiceAs: 'maj7#11' },
+    { intervals: [0,4,7,11,2,6],   suffix: 'maj9#11', quality: 'lydian',  priority: 14, voiceAs: 'maj7#11' },
     // Cluster voicing: root ♭3 11 5 13 ♭7 — no 9th (e.g. Fmin11 cluster)
     { intervals: [0,3,5,7,9,10],   suffix: 'm11',     quality: 'min11',   priority: 12, voiceAs: 'm11'  },
 
@@ -1178,6 +1236,376 @@
     { slot: 'far',    label: 'Far'    },
   ];
 
+  // ═══════════════════════════════════════════════════════════════════════
+  //  DEVICES — hard-wired harmonic moves
+  //
+  //  A device is a NAMED move a musician would recognise, not the winner of a
+  //  scoring contest. Search picks between valid instances of a device; it
+  //  never decides which devices exist. That is the difference between "here
+  //  are five chords that scored well" and "here is a passing diminished."
+  //
+  //  Each device yields a SEQUENCE of one or two chords, because the move is
+  //  the lesson. A7/C♯ on its own teaches nothing — A7/C♯ → Dm7 teaches the
+  //  chromatic bass climb C–C♯–D. Waiting for the tree to regenerate and hoping
+  //  it offers Dm7 is not good enough; the resolution ships with the device.
+  //
+  //  Slots are reserved by function so bass motion is guaranteed, not emergent:
+  //    home    the strongest functional destination
+  //    lift    bass ASCENDS by step or half step
+  //    shadow  bass DESCENDS by step or half step
+  //    slide   secondary dominant / modulation
+  //    far     reharmonisation, tritone sub, non-functional sonority
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const isMajorish = q => { const f = (QUALITIES[q] || {}).family; return f === 'major'; };
+  const isMinorish = q => { const f = (QUALITIES[q] || {}).family; return f === 'minor'; };
+
+  const DEVICES = [
+    // ── SHADOW: descending bass ──────────────────────────────────────────
+    {
+      id: 'maj7-in-bass', slot: 'shadow', label: 'Walk down',
+      roman: 'I → I/♮7',
+      applies: c => isMajorish(c.quality),
+      chords: c => [{ rootPC: c.root, quality: majSeventhOf(c.quality), bassPc: pc(c.root + 11) }],
+      why:    c => `the bass slips down a half step, ${noteName(c.root, false)}→${noteName(c.root + 11, false)}`,
+    },
+    {
+      id: 'minor-line-cliche', slot: 'shadow', label: 'Line cliché',
+      roman: 'i → i(maj7)/♮7',
+      applies: c => isMinorish(c.quality),
+      chords: c => [{ rootPC: c.root, quality: 'mMaj7', bassPc: pc(c.root + 11) }],
+      why:    c => `the minor line cliché — the bass walks ${noteName(c.root, false)}→${noteName(c.root + 11, false)}`,
+    },
+    {
+      id: 'backdoor-prep', slot: 'shadow', label: 'Down to IV',
+      roman: 'I → I7/♭7 → IV',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: c.root, quality: '7', bassPc: pc(c.root + 10) },
+        { rootPC: pc(c.root + 5), quality: 'maj7' },
+      ],
+      why:    c => `♭7 in the bass turns it into a dominant that pulls to ${noteName(c.root + 5, false)}`,
+    },
+
+    // ── LIFT: ascending bass ─────────────────────────────────────────────
+    {
+      id: 'passing-dim-up', slot: 'lift', label: 'Passing ♯i°7',
+      roman: 'I → ♯i°7 → ii',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 1), quality: 'dim7' },
+        { rootPC: pc(c.root + 2), quality: 'm7'   },
+      ],
+      why:    c => `the bass climbs ${noteName(c.root, false)}→${noteName(c.root + 1, false)}→${noteName(c.root + 2, false)}`,
+    },
+    {
+      id: 'V7-of-ii-inverted', slot: 'lift', label: 'V7/ii',
+      roman: 'I → V7/ii → ii',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 9), quality: '7', bassPc: pc(c.root + 1) },   // 3rd in the bass
+        { rootPC: pc(c.root + 2), quality: 'm7' },
+      ],
+      why:    c => `a secondary dominant with its 3rd in the bass — ${noteName(c.root, false)}→${noteName(c.root + 1, false)}→${noteName(c.root + 2, false)}`,
+    },
+    {
+      id: 'modal-oscillation-up', slot: 'lift', label: 'Modal shift',
+      roman: 'I6/9 ⇄ ii11',
+      applies: c => isMajorish(c.quality),
+      chords: c => [{ rootPC: pc(c.root + 2), quality: 'm11' }],
+      why:    c => `every note stays — only the bass steps ${noteName(c.root, false)}→${noteName(c.root + 2, false)}`,
+    },
+
+    // ── Minor-chord devices, so minor harmony gets real moves instead of
+    //    falling through to whatever scored well ─────────────────────────
+    {
+      id: 'minor-passing-dim-up', slot: 'lift', label: 'Passing °7', weight: 1,
+      roman: 'i → ♯i°7 → ii',
+      applies: c => isMinorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 1), quality: 'dim7'  },
+        { rootPC: pc(c.root + 2), quality: 'm7b5'  },
+      ],
+      why:    c => `the bass climbs ${noteName(c.root, false)}→${noteName(c.root + 1, false)}→${noteName(c.root + 2, false)}`,
+    },
+    {
+      id: 'minor-to-bVII', slot: 'slide', label: '♭VII', weight: 1,
+      roman: 'i → ♭VII7 → ♭III',
+      applies: c => isMinorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 10), quality: '7'    },
+        { rootPC: pc(c.root + 3),  quality: 'maj7' },
+      ],
+      why:    c => `the backdoor route to ${noteName(c.root + 3, false)} major`,
+    },
+    {
+      id: 'minor-half-dim-up', slot: 'lift', label: 'ii ø of the relative', weight: 0,
+      roman: 'i → iiø7 → V7',
+      applies: c => isMinorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 2), quality: 'm7b5' },
+        { rootPC: pc(c.root + 7), quality: '7alt' },
+      ],
+      why:    () => 'the minor ii–V, with the half-diminished on top',
+    },
+
+    // ── Sus-chord devices ────────────────────────────────────────────────
+    {
+      id: 'sus-bass-down', slot: 'shadow', label: 'sus walk down', weight: 1,
+      roman: 'V7sus4 → V7sus4/♭7',
+      applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
+      chords: c => [{ rootPC: c.root, quality: '7sus4', bassPc: pc(c.root + 10) }],
+      why:    c => `the bass drops to the ♭7, ${noteName(c.root, false)}→${noteName(c.root + 10, false)}`,
+    },
+    {
+      id: 'sus-up-a-step', slot: 'lift', label: 'sus step up', weight: 1,
+      roman: 'V7sus4 → ♭VI7sus4',
+      applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
+      chords: c => [{ rootPC: pc(c.root + 2), quality: '7sus4' }],
+      why:    c => `the whole structure slides up a step to ${noteName(c.root + 2, false)}sus7`,
+    },
+
+    // ── SLIDE: secondary dominants and modulation ────────────────────────
+    {
+      id: 'V7-of-IV', slot: 'slide', label: 'V7/IV', weight: 3,
+      roman: 'I → I7/3 → IV',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: c.root, quality: '7', bassPc: pc(c.root + 4) },           // 3rd in the bass
+        { rootPC: pc(c.root + 5), quality: 'maj7' },
+      ],
+      why:    c => `becomes the dominant of ${noteName(c.root + 5, false)}, bass rising ${noteName(c.root + 4, false)}→${noteName(c.root + 5, false)}`,
+    },
+    {
+      id: 'V7-of-V', slot: 'slide', label: 'V7/V', weight: -2,
+      roman: 'I → II7 → V7',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 2), quality: '7' },
+        { rootPC: pc(c.root + 7), quality: '7' },
+      ],
+      why:    c => `a dominant chain into ${noteName(c.root + 7, false)}7`,
+    },
+    {
+      id: 'V7-of-vi', slot: 'far', label: 'V7/vi', weight: 1,
+      roman: 'I → V7/vi → vi',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 4), quality: '7'  },
+        { rootPC: pc(c.root + 9), quality: 'm7' },
+      ],
+      why:    c => `modulates toward ${noteName(c.root + 9, false)} minor`,
+    },
+
+    // ── Sus dominants ────────────────────────────────────────────────────
+    // Delaying the 3rd is standard on a V chord: the sus hangs, the 3rd
+    // arrives, the chord resolves. Works as pure colour too — you can sit on
+    // the sus and never resolve it, which is most of modal jazz.
+    {
+      id: 'sus-then-dominant', slot: 'home', label: 'sus → V7', weight: 2,
+      roman: 'V7sus4 → V7 → I',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 7), quality: '7sus4' },
+        { rootPC: pc(c.root + 7), quality: '7'     },
+      ],
+      why:    c => `${noteName(c.root + 7, false)}sus7 delays the 3rd, then resolves into the dominant`,
+    },
+    {
+      id: 'sus-release', slot: 'home', label: 'Release the sus', weight: 3,
+      roman: 'V7sus4 → V7 → I',
+      applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
+      chords: c => [
+        { rootPC: c.root, quality: '7' },
+        { rootPC: pc(c.root + 5), quality: 'maj7' },
+      ],
+      why:    c => `the 4th falls to the 3rd — then it resolves to ${noteName(c.root + 5, false)}`,
+    },
+    {
+      id: 'sus-hang', slot: 'far', label: 'Stay suspended', weight: 0,
+      roman: 'V7sus4 (unresolved)',
+      applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
+      chords: c => [{ rootPC: pc(c.root + 5), quality: '7sus4' }],
+      why:    () => 'sus to sus — the resolution never comes, which is the point',
+    },
+
+    // ── HOME: the strongest functional destination ───────────────────────
+    {
+      id: 'ii-V', slot: 'home', label: 'ii–V',
+      roman: 'ii7 → V7',
+      applies: c => isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.root + 2), quality: 'm7' },
+        { rootPC: pc(c.root + 7), quality: '7'  },
+      ],
+      why:    () => 'the ii–V that sets up a return home',
+    },
+    {
+      id: 'V-I', slot: 'home', label: 'V→I',
+      roman: 'V7 → I',
+      applies: c => (QUALITIES[c.quality] || {}).family === 'dominant',
+      chords: c => [{ rootPC: pc(c.root + 5), quality: 'maj7' }],
+      why:    c => `resolves down a fifth to ${noteName(c.root + 5, false)}`,
+    },
+    {
+      id: 'minor-iv', slot: 'home', label: 'iv',
+      roman: 'i → iv',
+      applies: c => isMinorish(c.quality),
+      chords: c => [{ rootPC: pc(c.root + 5), quality: 'm7' }],
+      why:    () => 'the subdominant minor',
+    },
+    {
+      id: 'half-dim-V', slot: 'home', label: 'iiø–V',
+      roman: 'iiø7 → V7alt',
+      applies: c => c.quality === 'm7b5',
+      chords: c => [
+        { rootPC: pc(c.root + 5), quality: '7alt' },
+        { rootPC: pc(c.root + 10), quality: 'm7' },
+      ],
+      why:    c => `the half-diminished ii heading for ${noteName(c.root + 10, false)} minor`,
+    },
+    {
+      id: 'dim-resolve-up', slot: 'home', label: 'Resolve up ½',
+      roman: '°7 → I',
+      applies: c => (QUALITIES[c.quality] || {}).family === 'dim',
+      chords: c => [{ rootPC: pc(c.root + 1), quality: 'maj7' }],
+      why:    c => `diminished chords resolve up a half step, to ${noteName(c.root + 1, false)}`,
+    },
+
+    // ── FAR: reharmonisation and non-functional colour ───────────────────
+    {
+      id: 'tritone-sub', slot: 'far', label: 'Tritone sub',
+      roman: '♭II7 → I',
+      applies: c => (QUALITIES[c.quality] || {}).family === 'dominant',
+      chords: c => [
+        { rootPC: pc(c.root + 6), quality: '7' },
+        { rootPC: pc(c.root + 5), quality: 'maj7' },
+      ],
+      why:    c => `${noteName(c.root + 6, false)}7 shares its guide tones — same resolution, chromatic bass`,
+    },
+    {
+      id: 'modal-oscillation-down', slot: 'far', label: 'Modal shift',
+      roman: 'ii11 → I6/9',
+      applies: c => c.quality === 'm11' || c.quality === 'm9' || c.quality === 'm7',
+      chords: c => [{ rootPC: pc(c.root + 10), quality: '6/9' }],
+      why:    c => `settles onto ${noteName(c.root + 10, false)}6/9 — the modal resting place a step below`,
+    },
+  ];
+
+  // maj7 or 6 — keep the chord's own flavour when putting the 7th in the bass.
+  function majSeventhOf(q) {
+    return (q === '6' || q === '6/9') ? 'maj7' : (QUALITIES[q] ? q : 'maj7');
+  }
+
+  /**
+   * Non-functional chromatic sonorities — the Shorter / Hancock / Glasper move.
+   *
+   * These have no roman numeral, so they cannot be generated from function.
+   * They are FOUND, by doing the thing a pianist does: hold the upper structure,
+   * slide the bass a half step, and listen to what the chord became.
+   *
+   * Crucially this reads the notes ACTUALLY HELD, not an idealised chord —
+   * Fm11 voiced F A♭ B♭ E♭ slides to Emaj7♯11, but the same chord voiced with a
+   * natural 5 gives a different answer, and that difference is real music. An
+   * engine working from the chord SYMBOL could never find these.
+   */
+  function chromaticSonorities(prevNotes) {
+    if (!prevNotes || prevNotes.length < 3) return [];
+    const sorted = [...prevNotes].sort((a, b) => a - b);
+    const bass   = sorted[0];
+    const upper  = sorted.slice(1);
+    const out    = [];
+
+    for (const dir of [-1, 1]) {
+      const moved = bass + dir;
+      const notes = [moved, ...upper].sort((a, b) => a - b);
+      const id    = identify(notes);
+      if (!id) continue;
+
+      const common = upper.filter(n => notes.includes(n)).length;
+      if (common < Math.max(2, Math.ceil(upper.length * 0.6))) continue;
+
+      out.push({
+        root: id.rootPC,
+        q:    id.voiceAs,
+        bassPc: pc(moved),
+        slot: 'far',
+        family: 'sonority',
+        device: 'chromatic-sonority',
+        roman: '—',
+        common,
+        reason: `chromatic sonority: the bass slides ${dir < 0 ? 'down' : 'up'} a half step and ` +
+                `${common} voices hold — it becomes ${chordName(id.rootPC, id.suffix)}`,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Realize a device: voice each chord of its sequence in turn, each led from
+   * the one before, so the whole move is playable as written.
+   */
+  function realizeDevice(device, ctx, spice, shape) {
+    let chords;
+    try { chords = device.chords(ctx); } catch (_) { return null; }
+    if (!chords || !chords.length) return null;
+    if (chords.some(ch => !QUALITIES[ch.quality])) return null;
+
+    const sequence = [];
+    let from = ctx.prevNotes || [];
+
+    for (const ch of chords) {
+      // The dial gates the chord, not just its extensions: at "basic" a device
+      // asking for 7alt gets a plain 7 instead of being dropped, so the MOVE
+      // still works — just without the colour.
+      const quality = atSpice(ch.quality, spice);
+      const r = lead(from, ch.rootPC, quality, { spice, shape, bassPc: ch.bassPc });
+      if (!r.notes || r.notes.length < 2) return null;
+      sequence.push({
+        rootPC:  ch.rootPC,
+        quality,
+        bassPc:  ch.bassPc ?? null,
+        notes:   r.notes,
+        mapping: r.mapping,
+        name:    chordName(ch.rootPC, quality, ch.bassPc),
+      });
+      from = r.notes;
+    }
+    return sequence;
+  }
+
+  /**
+   * Alternate colourings of the same harmonic function.
+   *
+   * F7, F9, F13, F7♭9, F7♯9, F7alt all do the same job — they are one branch
+   * wearing different clothes. The tree offers the plainest one that the dial
+   * allows and hands the rest back here, so hovering a branch can show the
+   * shelf of options instead of burning four branches on one function.
+   */
+  function variants(prevNotes, rootPC, quality, spice, shape) {
+    const fam = (QUALITIES[quality] || {}).family;
+    if (!fam) return [];
+    const max = spice == null ? 1 : spice;
+    const out = [];
+
+    for (const q of Object.keys(QUALITIES)) {
+      if (QUALITIES[q].family !== fam) continue;
+      if (QUALITIES[q].triad !== QUALITIES[quality].triad) continue;
+      if (tierOf(q) > max) continue;
+      const r = lead(prevNotes || [], rootPC, q, { spice, shape });
+      if (!r.notes || r.notes.length < 2) continue;
+      out.push({
+        quality: q,
+        tier:    tierOf(q),
+        name:    chordName(rootPC, q),
+        notes:   r.notes,
+        mapping: r.mapping,
+        current: q === quality,
+      });
+    }
+    return out.sort((a, b) => a.tier - b.tier || a.quality.length - b.quality.length);
+  }
+
   /**
    * Five branch suggestions for the current chord.
    * `suggest(prevNotes, rootPC, quality, trail, spice, shape)`
@@ -1191,56 +1619,172 @@
     const keyTonic = key ? key.tonicPc : null;
 
     const prevBassPc = (prevNotes && prevNotes.length) ? pc(Math.min(...prevNotes)) : null;
+    const ctx = { root, quality: q, keyTonic, keyMode: key ? key.mode : null,
+                  prevNotes: prevNotes || [], prevBassPc };
 
-    // Destinations get offered in root position and over each chord tone; the
-    // bass-motion score decides which inversion actually earns the slot.
-    const raw = [
+    // ── 1. Devices first — the hard-wired theory ──
+    const bySlot = {};
+    for (const device of DEVICES) {
+      let ok = false;
+      try { ok = device.applies(ctx); } catch (_) { ok = false; }
+      if (!ok) continue;
+
+      const sequence = realizeDevice(device, ctx, spice, shape);
+      if (!sequence) continue;
+
+      const first = sequence[0];
+      const held  = commonTones(prevNotes, first.notes);
+      const bass  = bassMotionBonus(prevBassPc, { root: first.rootPC, q: first.quality, bassPc: first.bassPc }, keyTonic);
+
+      (bySlot[device.slot] = bySlot[device.slot] || []).push({
+        device, sequence,
+        // Devices are all musically valid, so the score only breaks ties
+        // between them. Common tones dominate: holding voices while the bass
+        // moves is the sound we are actually after. `weight` lets a device
+        // declare how instructive it is when several fit the same slot.
+        score: held * 4 + bass.bonus * 2 + (sequence.length > 1 ? 2 : 0) + (device.weight || 0) * 3,
+        held, bassLabel: bass.label,
+      });
+    }
+
+    // Non-functional sonorities compete for the Far slot on common tones alone.
+    for (const s of chromaticSonorities(prevNotes)) {
+      // Gate by the dial like everything else — a sonority found by ear still
+      // gets plainened when the player asked for basic harmony.
+      s.q = atSpice(s.q, spice);
+      const r = lead(prevNotes, s.root, s.q, { spice, shape, bassPc: s.bassPc });
+      if (!r.notes || r.notes.length < 2) continue;
+      (bySlot.far = bySlot.far || []).push({
+        device: { id: s.device, slot: 'far', label: 'Chromatic sonority', roman: s.roman,
+                  why: () => s.reason },
+        sequence: [{ rootPC: s.root, quality: s.q, bassPc: s.bassPc,
+                     notes: r.notes, mapping: r.mapping,
+                     name: chordName(s.root, s.q, s.bassPc) }],
+        variants: variants(prevNotes, s.root, s.q, spice, shape),
+        score: s.common * 5,
+        held: s.common, bassLabel: 'chromatic bass',
+      });
+    }
+
+    // ── 2. Generic scored candidates — the fallback for unfilled slots ──
+    const pool = [
       ...withInversions(functionalCandidates(root, q)),
       ...chromaticBassCandidates(root, q),
       ...withInversions(tritoneCandidates(root, q)),
       ...reharmCandidates(root, q),
       ...slashCandidates(root, q),
-    ].filter(c => QUALITIES[c.q]);
+    ].filter(c => QUALITIES[c.q])
+     // The dial gates suggestions: "basic" must never volunteer an altered
+     // dominant. Anything richer than the dial allows is plainened, not dropped.
+     .map(c => ({ ...c, q: atSpice(c.q, spice) }));
 
-    const scored = raw
+    const scored = pool
       .map(c => scoreCandidate(prevNotes, c, keyTonic, spice, shape, prevBassPc))
       .filter(c => c.voiced.notes.length >= 2)
       .filter(c => Math.max(...c.voiced.notes) - Math.min(...c.voiced.notes) <= 36)
       .sort((a, b) => b.score - a.score);
 
-    // Five branches means five genuinely different harmonic choices, so slots
-    // dedupe on chord identity — the inversion is part of the winner, not a
-    // separate option competing for its own slot.
+    // ── 3. Fill the five slots ──
     const usedChord = new Set();
-    const chordOf   = c => `${c.root}:${c.q}`;
-    const chosen    = [];
+    const usedRoot  = new Set();
+    const chordOf   = (r, qq) => `${r}:${qq}`;
+    const branches  = [];
 
     for (const { slot, label } of SLOTS) {
-      const pick = scored.find(c => c.slot === slot && !usedChord.has(chordOf(c)))
-                || scored.find(c => !usedChord.has(chordOf(c)));
-      if (!pick) continue;
-      usedChord.add(chordOf(pick));
+      const candidates = (bySlot[slot] || []).sort((a, b) => b.score - a.score);
+      const pick = candidates.find(c => !usedChord.has(chordOf(c.sequence[0].rootPC, c.sequence[0].quality)));
 
-      const reason = pick.bass.label && pick.bassPc != null
-        ? `${pick.reason} · ${pick.bass.label}`
-        : pick.reason;
+      if (pick) {
+        const first = pick.sequence[0];
+        const last  = pick.sequence[pick.sequence.length - 1];
+        usedChord.add(chordOf(first.rootPC, first.quality));
+        usedRoot.add(first.rootPC);
+        branches.push({
+          slot, label,
+          device:   pick.device.id,
+          deviceLabel: pick.device.label,
+          roman:    pick.device.roman,
+          sequence: pick.sequence,
+          // The tip shows the whole move: "A7/C♯ → Dm7"
+          name:     pick.sequence.map(s => s.name).join(' → '),
+          reason:   safeWhy(pick.device, ctx),
+          bassLabel: pick.bassLabel,
+          heldCount: pick.held,
+          // The chord to play FIRST — what the keyboard lights and what
+          // compose mode listens for.
+          rootPC:  first.rootPC,
+          quality: first.quality,
+          bassPc:  first.bassPc,
+          notes:   first.notes,
+          mapping: first.mapping,
+          // Same function, other colours — for the hover menu.
+          variants: pick.variants || variants(prevNotes, first.rootPC, first.quality, spice, shape),
+          // Where the whole device lands — this becomes the tree's new root.
+          resolvesTo: last,
+        });
+        continue;
+      }
 
-      chosen.push({
+      // No device applies — fall back to a scored candidate. Dedupe on the
+      // ROOT, not root+quality: F7, F7♭9 and F7♯9 are one harmonic idea wearing
+      // three hats, and offering all three wastes the branches.
+      const alt = scored.find(c => !usedChord.has(chordOf(c.root, c.q)) && !usedRoot.has(c.root));
+      if (!alt) continue;
+      usedChord.add(chordOf(alt.root, alt.q));
+      usedRoot.add(alt.root);
+      const one = {
+        rootPC: alt.root, quality: alt.q, bassPc: alt.bassPc ?? null,
+        notes: alt.voiced.notes, mapping: alt.voiced.mapping,
+        name: chordName(alt.root, alt.q, alt.bassPc),
+      };
+      branches.push({
         slot, label,
-        rootPC:  pick.root,
-        quality: pick.q,
-        bassPc:  pick.bassPc ?? null,
-        notes:   pick.voiced.notes,
-        mapping: pick.voiced.mapping,
-        reason,
-        family:  pick.family,
-        pullLabel: pick.pull.label,
-        bassLabel: pick.bass.label,
-        idiomHits: pick.idiom.hits,
-        name:    chordName(pick.root, pick.q, pick.bassPc),
+        device: null,
+        deviceLabel: null,
+        roman: romanOf(alt.root, alt.q, keyTonic),
+        sequence: [one],
+        name: one.name,
+        reason: alt.bass.label ? `${alt.reason} · ${alt.bass.label}` : alt.reason,
+        bassLabel: alt.bass.label,
+        heldCount: commonTones(prevNotes, one.notes),
+        rootPC: one.rootPC, quality: one.quality, bassPc: one.bassPc,
+        notes: one.notes, mapping: one.mapping,
+        variants: variants(prevNotes, one.rootPC, one.quality, spice, shape),
+        resolvesTo: one,
       });
     }
-    return { key, branches: chosen };
+
+    return { key, branches };
+  }
+
+  function safeWhy(device, ctx) {
+    try { return device.why(ctx); } catch (_) { return device.label || ''; }
+  }
+
+  // How many sounding pitches survive the move untouched — the thing that
+  // makes a bass shift sound like colour rather than like a new chord.
+  function commonTones(prevNotes, nextNotes) {
+    if (!prevNotes || !nextNotes) return 0;
+    const next = new Set(nextNotes);
+    return prevNotes.filter(n => next.has(n)).length;
+  }
+
+  // ── Roman numerals ──────────────────────────────────────────────────────
+
+  const NUMERALS = ['I','♭II','II','♭III','III','IV','♯IV','V','♭VI','VI','♭VII','VII'];
+
+  function romanOf(rootPC, quality, keyTonic) {
+    if (keyTonic == null) return '';
+    const def = QUALITIES[quality] || {};
+    let numeral = NUMERALS[pc(rootPC - keyTonic)];
+    if (def.family === 'minor' || def.family === 'dim') numeral = numeral.toLowerCase();
+    const tag = def.family === 'dim'      ? '°7'
+              : def.family === 'dominant' ? '7'
+              : def.family === 'sus'      ? 'sus'
+              : quality === 'maj7' || quality === 'maj9' ? 'maj7'
+              : def.family === 'minor'    ? '7'
+              : '';
+    return numeral + tag;
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -1254,7 +1798,7 @@
     SHARP_ROOT_PCS, SHARP_NAMES, FLAT_NAMES,
     noteName, spell, midiName, glyphs, chordName,
     // colour + shape
-    colour, voice,
+    colour, voice, variants, atSpice, tierOf,
     // voice leading
     lead, fingering, nearestOctave, placeNear,
     // recognition

@@ -418,13 +418,9 @@ check('lift ∪ hold exactly covers what was already down', () => {
 // An inverted voicing is genuinely ambiguous — C6 over E really is Am7/E — so
 // only root-position shapes are held to this.
 //
-// Two families are exempt even then, because the ambiguity is in the music and
-// not in the code:
-//   dim7    is symmetric; all four spellings are equally correct.
-//   m7♭5    with its natural 11 is a rotation of m6/9 — Cm11♭5 and E♭m6/9 are
-//           the same five pitch classes, and picking between them needs
-//           context the recogniser does not have.
-const AMBIGUOUS = new Set(['dim', 'dim7', 'm7b5']);
+// Only the diminished family is exempt, and only because it is symmetric —
+// all four spellings of a dim7 are equally correct.
+const AMBIGUOUS = new Set(['dim', 'dim7']);
 
 check('recognises the root-position chords it generates', () => {
   const bad = [];

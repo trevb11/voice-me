@@ -172,16 +172,33 @@ Two families are exempt from the strict root assertion because the ambiguity is
 in the music: `dim7` is symmetric, and inverted (`invertBass`) shapes are
 genuinely ambiguous — C6 over E really is Am7/E.
 
+## Spaces in the install path
+
+Two separate things break when the app lives under a path containing a space,
+and `productName` is "Voice Me" — so the packaged app is
+`/Applications/Voice Me.app/` and **every** install hits this.
+
+- **Audio.** `Tone.Sampler`'s `urls` map cannot be used. Tone normalises each
+  URL by re-encoding the whole pathname a segment at a time, and the pathname
+  is already percent-encoded, so `Voice%20Me` becomes `Voice%2520Me` and every
+  fetch 404s. Worse, it fails *silently*: the load promise never settles and
+  the Sound button spins on "Loading…" forever. `audio.js` therefore fetches
+  and decodes the samples itself and calls `sampler.add(note, buffer)`. Don't
+  "simplify" it back to a `urls` map.
+- **Native rebuild.** node-gyp warns; `npm run rebuild` works anyway.
+
+Sample filenames also need encoding for a second reason — `D#1-p.wav` has a `#`
+in it, which is a URL fragment delimiter. Ten of the 21 sampled notes are
+sharps. `sampleUrl()` in `audio.js` handles both problems.
+
 ## Known gaps
 
 - **`src/renderer/sounds/Samples/` is empty in the exported zip only** — Jared
   has the 80 Rhodes samples locally (`{note}-{p|mp|mf|f}.wav`, one every 3
-  semitones A0–A5). Audio works on his machine.
+  semitones A0–A5). They are gitignored; 429 MB does not belong in the repo.
 - No linter.
 - `npm audit` reports vulnerabilities in the electron-builder dev chain; they
   don't affect the shipped app.
-- The project path contains a space, which node-gyp warns about. The rebuild
-  works anyway.
 - The in-app browser preview caches referenced `.js` files, so it shows stale
   code after edits. Verify renderer changes by running the real app
   (`npm start`) and checking for `ERROR:CONSOLE` in the output.

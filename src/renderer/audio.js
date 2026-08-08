@@ -1,14 +1,34 @@
 /**
  * audio.js
- * Voice Me — Fender Rhodes sampler
- * Tone.js v14 with 4-layer velocity-sensitive samples
+ * Voice Me — Fender Rhodes sampler, 4 velocity layers.
+ *
+ * ── Why the samples are loaded by hand ─────────────────────────────────────
+ *
+ * We fetch and decode each sample ourselves instead of handing Tone.Sampler a
+ * `urls` map, because Tone's URL handling breaks on any install path
+ * containing a space.
+ *
+ * Tone normalises a sample URL by re-encoding the whole pathname a segment at
+ * a time: `(a.pathname + a.hash).split('/').map(encodeURIComponent)`. The
+ * pathname it starts from is ALREADY percent-encoded, so a folder called
+ * "Voice Me" arrives as `Voice%20Me` and comes out as `Voice%2520Me` — a path
+ * that does not exist. Every fetch fails, the load promise never settles, and
+ * the Sound button spins on "Loading…" forever with no error.
+ *
+ * That is not a corner case: `productName` is "Voice Me", so the packaged app
+ * lives at `/Applications/Voice Me.app/` and would ship with silent audio.
+ *
+ * Encoding only the FILENAME against an absolute directory URL sidesteps it,
+ * and handles the sharps at the same time — `D#1-p.wav` must become
+ * `D%231-p.wav` or the `#` is read as a URL fragment.
  */
 
 let   audioEnabled  = false;
 let   samplersReady = false;
-const activeNotes   = new Map(); // midi → layer name
+let   loadError     = null;
+const activeNotes   = new Map();   // midi → layer name
 
-// ── Velocity layer selection ───────────────────────────────────────────────
+// ── Velocity layers ────────────────────────────────────────────────────────
 
 function getLayer(velocity) {
   if (velocity <= 40)  return 'p';
@@ -17,9 +37,9 @@ function getLayer(velocity) {
   return 'f';
 }
 
-// ── Sample map ─────────────────────────────────────────────────────────────
-// One sample every 3 semitones — Tone.Sampler interpolates between them
+const LAYERS = ['p', 'mp', 'mf', 'f'];
 
+// One sample every 3 semitones — Tone interpolates between them.
 const SAMPLE_NOTES = [
   'A0',
   'C1',  'D#1', 'F#1', 'A1',
@@ -29,15 +49,37 @@ const SAMPLE_NOTES = [
   'C5',  'D#5', 'F#5', 'A5',
 ];
 
-function buildUrls(layer) {
-  const urls = {};
-  SAMPLE_NOTES.forEach(note => {
-    urls[note] = `${note}-${layer}.wav`;
-  });
-  return urls;
+// ── Loading ────────────────────────────────────────────────────────────────
+
+function sampleDir() {
+  return new URL('./sounds/Samples/', document.baseURI);
 }
 
-// ── Samplers (one per velocity layer) ─────────────────────────────────────
+/** Absolute URL with ONLY the filename encoded — see the note at the top. */
+function sampleUrl(fileName) {
+  return new URL(encodeURIComponent(fileName), sampleDir()).href;
+}
+
+async function decodeSample(fileName) {
+  const res = await fetch(sampleUrl(fileName));
+  if (!res.ok) throw new Error(`${fileName} — HTTP ${res.status}`);
+  return Tone.context.rawContext.decodeAudioData(await res.arrayBuffer());
+}
+
+async function buildSampler(layer, destination) {
+  const sampler = new Tone.Sampler().connect(destination);
+
+  const results = await Promise.all(SAMPLE_NOTES.map(async (note) => {
+    try   { return { note, buffer: await decodeSample(`${note}-${layer}.wav`) }; }
+    catch (err) { return { note, err }; }
+  }));
+
+  results.forEach(r => {
+    if (r.buffer) sampler.add(r.note, new Tone.ToneAudioBuffer(r.buffer));
+  });
+
+  return { sampler, missing: results.filter(r => r.err).map(r => r.note) };
+}
 
 const samplers    = {};
 let   loadPromise = null;
@@ -45,106 +87,101 @@ let   loadPromise = null;
 function initSamplers() {
   if (loadPromise) return loadPromise;
 
-  // Optimize for low latency real-time performance
-  Tone.context.latencyHint = 'interactive';
-  Tone.context.lookAhead   = 0.01;
-  Tone.context.updateInterval = 0.01;
+  Tone.context.latencyHint     = 'interactive';
+  Tone.context.lookAhead       = 0.01;
+  Tone.context.updateInterval  = 0.01;
 
-  // Signal chain: samplers → reverb → volume → output
   const reverb    = new Tone.Reverb({ decay: 2.5, wet: 0.15 });
   const masterVol = new Tone.Volume(-6);
-
   reverb.connect(masterVol);
   masterVol.toDestination();
 
-  const layers   = ['p', 'mp', 'mf', 'f'];
-  const promises = layers.map(layer =>
-    new Promise(resolve => {
-      samplers[layer] = new Tone.Sampler({
-        urls:    buildUrls(layer),
-        baseUrl: './sounds/Samples/',
-        onload:  resolve,
-      }).connect(reverb);
-    })
-  );
+  loadPromise = Promise.all(LAYERS.map(layer => buildSampler(layer, reverb)))
+    .then((built) => {
+      const missing = [];
+      built.forEach(({ sampler, missing: gone }, i) => {
+        samplers[LAYERS[i]] = sampler;
+        gone.forEach(n => missing.push(`${n}-${LAYERS[i]}`));
+      });
 
-  loadPromise = Promise.all(promises).then(() => {
-    samplersReady = true;
-    updateAudioBtn();
-    console.log('[Audio] Rhodes samples loaded');
-  });
+      if (missing.length === LAYERS.length * SAMPLE_NOTES.length) {
+        // Nothing loaded at all — say so instead of spinning forever.
+        loadError = `no samples found in ${sampleDir().pathname}`;
+        console.error('[Audio]', loadError);
+      } else if (missing.length) {
+        console.warn(`[Audio] ${missing.length} sample(s) missing:`, missing.slice(0, 8).join(', '),
+                     missing.length > 8 ? `…and ${missing.length - 8} more` : '');
+        samplersReady = true;
+      } else {
+        samplersReady = true;
+        console.log('[Audio] Rhodes samples loaded');
+      }
+      updateAudioBtn();
+    })
+    .catch((err) => {
+      loadError = err.message;
+      console.error('[Audio] failed to load samples:', err);
+      updateAudioBtn();
+    });
 
   return loadPromise;
 }
 
-// ── Note on ────────────────────────────────────────────────────────────────
+// ── Note on/off ────────────────────────────────────────────────────────────
 
 function startNote(midi, velocity) {
   if (!audioEnabled || !samplersReady) return;
-
-  const layer   = getLayer(velocity);
-  const note    = Tone.Frequency(midi, 'midi').toNote();
-  const velNorm = velocity / 127;
-
-  // Release any existing voice on this midi note first
+  const layer = getLayer(velocity);
+  const note  = Tone.Frequency(midi, 'midi').toNote();
   stopNote(midi);
-
-  samplers[layer].triggerAttack(note, Tone.context.currentTime, velNorm);
+  samplers[layer].triggerAttack(note, Tone.context.currentTime, velocity / 127);
   activeNotes.set(midi, layer);
 }
-
-// ── Note off ───────────────────────────────────────────────────────────────
 
 function stopNote(midi) {
   const layer = activeNotes.get(midi);
   if (!layer) return;
-
-  const note = Tone.Frequency(midi, 'midi').toNote();
-  samplers[layer].triggerRelease(note, Tone.context.currentTime);
+  samplers[layer].triggerRelease(Tone.Frequency(midi, 'midi').toNote(), Tone.context.currentTime);
   activeNotes.delete(midi);
 }
 
-// ── Stop all ───────────────────────────────────────────────────────────────
-
 function stopAllNotes() {
-  [...activeNotes.keys()].forEach(midi => stopNote(midi));
+  [...activeNotes.keys()].forEach(stopNote);
 }
 
-// ── Button state ───────────────────────────────────────────────────────────
+// ── Button ─────────────────────────────────────────────────────────────────
 
 function updateAudioBtn() {
   const btn = document.getElementById('audio-toggle-btn');
   if (!btn) return;
 
-  if (audioEnabled && !samplersReady) {
+  if (loadError) {
+    btn.textContent = '⚠ No samples';
+    btn.title       = loadError;
+    btn.classList.remove('active');
+  } else if (audioEnabled && !samplersReady) {
     btn.textContent = '◌ Loading…';
     btn.classList.remove('active');
   } else {
     btn.textContent = audioEnabled ? '⊙ Sound' : '○ Sound';
+    btn.title       = '';
     btn.classList.toggle('active', audioEnabled);
   }
 }
 
-// ── Toggle ─────────────────────────────────────────────────────────────────
-
 function toggleAudio() {
   audioEnabled = !audioEnabled;
-
   if (audioEnabled) {
-    Tone.start(); // resume AudioContext — must be inside user gesture
+    Tone.start();                       // resume AudioContext — needs a user gesture
     if (!samplersReady) initSamplers();
   } else {
     stopAllNotes();
   }
-
   updateAudioBtn();
 }
 
-// ── Button wiring ──────────────────────────────────────────────────────────
-
 function wireAudioButton() {
-  const btn = document.getElementById('audio-toggle-btn');
-  if (btn) btn.addEventListener('click', toggleAudio);
+  document.getElementById('audio-toggle-btn')?.addEventListener('click', toggleAudio);
 }
 
 if (document.readyState === 'loading') {
@@ -152,7 +189,5 @@ if (document.readyState === 'loading') {
 } else {
   wireAudioButton();
 }
-
-// ── Global API ─────────────────────────────────────────────────────────────
 
 window.AudioEngine = { startNote, stopNote, stopAllNotes, toggleAudio };

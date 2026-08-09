@@ -11,3 +11,5 @@ src/renderer/sounds/
 # icon.png / icon.icns are committed deliverables; the iconset scratch dir is not
 build/icon.iconset/
 dist/
+__pycache__/
+*.pyc

@@ -32,13 +32,24 @@
       ],
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "icon": "build/icon.icns"
     },
     "files": [
       "src/**/*",
-      "assets/**/*"
+      "!src/renderer/sounds/**",
+      "LICENSE"
+    ],
+    "extraResources": [
+      {
+        "from": "src/renderer/sounds/Samples",
+        "to": "app/src/renderer/sounds/Samples",
+        "filter": [
+          "**/*.wav"
+        ]
+      }
     ]
   },
-  "author": "",
+  "author": "Jared Silverstein",
   "license": "MIT"
 }

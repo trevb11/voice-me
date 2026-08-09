@@ -7,3 +7,7 @@ dist/
 # Source of truth is Jared's local copy; the app needs them at
 # src/renderer/sounds/Samples/{note}-{p|mp|mf|f}.wav
 src/renderer/sounds/
+
+# icon.png / icon.icns are committed deliverables; the iconset scratch dir is not
+build/icon.iconset/
+dist/

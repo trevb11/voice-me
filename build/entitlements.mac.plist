@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Hardened Runtime entitlements. Electron needs the first two because V8
+    compiles JavaScript to machine code at runtime; without them the app is
+    signed but crashes on launch.
+
+    Audio output and CoreMIDI input need no entitlement — they are not
+    protected resources. There is deliberately no microphone or camera
+    entitlement here: Voice Me reads MIDI, it does not record you.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>

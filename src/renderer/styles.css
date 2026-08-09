@@ -1065,11 +1065,21 @@ body:not(.compose-mode) #compose-trail-outer {
   padding: 2px 4px;
   transition: opacity 0.2s;
 }
+/* Ledger chords are clickable — click one to put its prompt back on the
+   keyboard and practise it. Hover must read as "clickable", so no fading and
+   no cursor:default. */
 .trail-chord:hover {
   border-color: var(--accent);
   color: var(--accent);
-  opacity: 0.6;
-  cursor: default;
+  cursor: pointer;
+}
+
+/* The chord currently being practised. */
+.trail-chord.practising {
+  border-color: var(--accent);
+  color: var(--accent);
+  background-color: var(--accent-soft, rgba(59, 130, 246, 0.16));
+  box-shadow: 0 0 0 2px var(--accent-soft, rgba(59, 130, 246, 0.16));
 }
 .trail-arrow {
   color: var(--text-muted);

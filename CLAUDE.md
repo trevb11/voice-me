@@ -106,6 +106,21 @@ never light the wrong keys. The mapping is still the right source for *arrows*.
 function of (is it down?, what does the cue ask?). The predecessor kept three
 independent sets whose clear-functions disagreed about precedence.
 
+**A cue survives being played.** A cued key keeps its colour whether or not it
+is currently down, and the cue is computed once — never recomputed per
+keypress. Both matter: if a gold key went green (or flipped to blue) as you
+pressed it, the prompt would dissolve under your fingers and a half-played
+chord would look like an unstarted one. The target only changes when the whole
+chord is right.
+
+### Practising a committed chord
+
+Clicking a chord in the ledger re-cues its committed voicing. This is *not*
+Backspace — the tree does not rewind and the trail is untouched; you are
+re-playing a voicing you already chose to get it under your fingers. Practice
+suppresses the tree-rebuild that free play would otherwise trigger. Escape,
+Backspace, or picking a branch leaves it.
+
 ## Devices
 
 Branches are **named harmonic moves**, not scoring winners. Search only breaks
@@ -163,6 +178,12 @@ carries the motion**:
 `npm test` runs 43 invariants over every root × quality × spice × shape, plus
 realistic human voicings (close, shell, rootless) as voice-leading seeds. No
 framework.
+
+`npm run test:ui` drives the real `app.js` and `compose.js` inside Electron
+against a minimal DOM (`test/ui/harness.html`) — it covers what only the
+wired-up app can get wrong: walking a device chord by chord, ledger practice
+mode, and the rule that **a key's prompt survives being played**. `app.js`
+exposes `window.VoiceMeTestInput` to inject notes without hardware.
 
 Seeding matters: an early sweep reported 0% failures because it fed the engine
 its *own* output, which is already well-spaced. Real players play close

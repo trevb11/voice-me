@@ -22,12 +22,18 @@ const compose = {
   branches:     [],
   trail:        [],     // committed chords, each tagged with the device it came from
   pending:      null,   // { branch, step } while walking a device
+  practice:     null,   // { idx, solved } while re-playing a committed chord
   key:          null,
   prevHeld:     new Set(),
   spice:        1,      // 0 basic · 1 colourful · 2 complex — WHICH notes
   shape:        'closed', // minimal · closed · open · cluster — HOW they spread
   groupSeq:     0,      // increments per committed device, so Backspace can pop one whole
 };
+
+/** Exactly these notes and no others — a chord is not "played" until it is complete. */
+function matches(heldSet, notes) {
+  return heldSet.size === notes.length && notes.every(n => heldSet.has(n));
+}
 
 // ── Suggestions ────────────────────────────────────────────────────────────
 
@@ -299,7 +305,8 @@ function showVariantMenu(branch, tipEl) {
 // ── Walking a device ───────────────────────────────────────────────────────
 
 function selectBranch(branch) {
-  compose.pending = { branch, step: 0 };
+  compose.practice = null;              // choosing a branch leaves practice
+  compose.pending  = { branch, step: 0 };
   cueStep();
   document.querySelectorAll('.branch-tip').forEach(t => t.classList.remove('pending'));
   document.querySelector(`.branch-tip[data-branch-id="${branch.slot}"]`)?.classList.add('pending');
@@ -366,9 +373,27 @@ function checkComposeMatch(heldMidi) {
   if (!compose.active) return;
   const held = new Set(heldMidi);
 
+  // ── Practice: confirm the chord, then leave the prompt up to repeat ──
+  // The tree must NOT rebuild here — you are revisiting a chord you already
+  // committed, not choosing a new one.
+  if (compose.practice) {
+    const chord = compose.trail[compose.practice.idx];
+    if (chord && matches(held, chord.notes)) {
+      if (!compose.practice.solved) {
+        compose.practice.solved = true;
+        window.VoiceMe?.flashGreen(chord.notes);
+        playChimeSound();
+        updateStatus(`${chord.name} ✓ — play it again, or click another chord`);
+      }
+    } else if (compose.practice.solved) {
+      compose.practice.solved = false;      // hands lifted; ready for another go
+    }
+    compose.prevHeld = held;
+    return;
+  }
+
   if (compose.pending) {
-    const target = new Set(compose.pending.branch.sequence[compose.pending.step].notes);
-    if (held.size === target.size && [...target].every(n => held.has(n))) advanceStep();
+    if (matches(held, compose.pending.branch.sequence[compose.pending.step].notes)) advanceStep();
     compose.prevHeld = held;
     return;
   }
@@ -428,6 +453,7 @@ function renderComposition() {
 
 function backspaceCompose() {
   if (!compose.active || compose.trail.length === 0) return;
+  if (compose.practice) return stopPractising();   // leave practice before editing the song
 
   if (compose.pending) {           // abandon the walk before touching the trail
     compose.pending = null;
@@ -508,9 +534,58 @@ function renderTrail() {
   el.innerHTML = compose.trail.map((c, i) => {
     const startsDevice = c.device && (i === 0 || compose.trail[i - 1].group !== c.group);
     const label = startsDevice ? `<span class="trail-device">${c.roman}</span>` : '';
-    return label + `<span class="trail-chord" data-idx="${i}">${c.name}</span>` +
-           (i < compose.trail.length - 1 ? '<span class="trail-arrow">·</span>' : '');
+    const practising = compose.practice && compose.practice.idx === i ? ' practising' : '';
+    return label +
+      `<span class="trail-chord${practising}" data-idx="${i}" title="Click to practise this voicing">${c.name}</span>` +
+      (i < compose.trail.length - 1 ? '<span class="trail-arrow">·</span>' : '');
   }).join('');
+
+  el.querySelectorAll('.trail-chord').forEach(span => {
+    span.addEventListener('click', () => practiseChord(parseInt(span.dataset.idx, 10)));
+  });
+}
+
+// ── Practice ───────────────────────────────────────────────────────────────
+//
+// Click any chord in the ledger to get its prompt back on the keyboard. This is
+// NOT backspace: the tree does not rewind and the trail is not touched. You are
+// re-playing a voicing you already chose, using the exact notes that were
+// committed, purely to get it under your fingers.
+//
+// The cue is computed ONCE, when you click. It deliberately does not follow
+// your hands — if it were recomputed per keypress, a gold key would flip to
+// blue the instant you pressed it, and the prompt would dissolve out from under
+// you as you played.
+
+function practiseChord(idx) {
+  const chord = compose.trail[idx];
+  if (!chord) return;
+
+  // Clicking the chord you are already practising exits practice.
+  if (compose.practice && compose.practice.idx === idx) return stopPractising();
+
+  compose.pending  = null;                 // practice and device-walking are exclusive
+  compose.practice = { idx };
+
+  window.VoiceMe?.cueFor(window.VoiceMe.soundingNotes(), chord.notes);
+
+  // Show how the voices moved to get here, when there is a previous chord.
+  const prev = compose.trail[idx - 1];
+  if (prev) window.VoiceMe?.showArrowsBetween(prev.notes, chord.notes);
+  else      window.VoiceMe?.clearArrows();
+
+  document.querySelectorAll('.branch-tip').forEach(t => t.classList.remove('pending'));
+  renderTrail();
+  updateStatus(`Practising ${chord.name}${prev ? `  (from ${prev.name})` : ''} — Esc to stop`);
+}
+
+function stopPractising() {
+  if (!compose.practice) return;
+  compose.practice = null;
+  window.VoiceMe?.clearCue();
+  window.VoiceMe?.clearArrows();
+  renderTrail();
+  updateStatus(compose.currentChord ? compose.currentChord.name : '');
 }
 
 function updateStatus(text) {
@@ -596,7 +671,7 @@ function activateCompose() {
 function deactivateCompose() {
   Object.assign(compose, {
     active: false, currentChord: null, branches: [], trail: [],
-    pending: null, prevHeld: new Set(),
+    pending: null, practice: null, prevHeld: new Set(),
   });
   document.body.classList.remove('compose-mode');
   hideVariantMenu();
@@ -630,6 +705,7 @@ document.getElementById('compose-btn')?.addEventListener('click', toggleCompose)
 document.getElementById('compose-backspace')?.addEventListener('click', backspaceCompose);
 
 document.addEventListener('keydown', (e) => {
+  if (compose.active && e.key === 'Escape' && compose.practice) { stopPractising(); return; }
   if (!compose.active || e.key !== 'Backspace') return;
   const t = e.target;
   if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;

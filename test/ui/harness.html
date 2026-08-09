@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<!--
+  Minimal DOM for driving compose mode headlessly. Only the elements the
+  renderer actually reaches for — enough to exercise the real app.js and
+  compose.js rather than a reimplementation of them.
+-->
+<html><head><meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline'; worker-src blob:;" />
+</head><body>
+<div id="app">
+  <div id="top-bar">
+    <div id="midi-status"></div><span id="midi-label"></span>
+    <select id="port-select"></select><button id="refresh-btn"></button>
+    <button id="compose-btn"></button><div id="held-notes"></div>
+    <div id="spice-dial"></div><div id="shape-dial"></div>
+    <button id="audio-toggle-btn"></button><button id="bass-note-btn"></button>
+  </div>
+  <svg id="piano" viewBox="0 0 1320 220"></svg>
+  <div id="compose-trail-outer"><div id="compose-trail"></div><button id="compose-backspace"></button></div>
+  <div id="compose-tree"></div><div id="compose-status"></div>
+  <div id="notation-area"><div id="notation-staff"></div></div>
+  <span id="chord-name"></span><span id="chord-type"></span><span id="chord-alt"></span>
+  <div id="voicing-panel"></div><div id="panel-tab"></div><div id="theme-list"></div>
+</div>
+<script src="../../src/renderer/harmony.js"></script>
+<script src="../../src/renderer/piano.js"></script>
+<script src="../../src/renderer/app.js"></script>
+<script src="../../src/renderer/compose.js"></script>
+<script src="flow.js"></script>
+</body></html>

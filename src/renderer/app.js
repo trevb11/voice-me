@@ -98,26 +98,28 @@ function defaultFill(el) { return isBlackKey(el) ? 'url(#bk-grad)' : 'url(#wk-gr
  * A total function of the two things that matter — whether the key is down,
  * and what the cue asks of it. Every case is listed, so no combination can
  * fall through to whichever layer happened to paint last.
+ *
+ * ── A cue survives being played ────────────────────────────────────────────
+ *
+ * A key that is cued keeps its cue colour whether or not it is currently down.
+ * Pressing one note of a chord must not clear that note's prompt: you would
+ * lose your place the moment you lifted a finger to reposition, and a chord you
+ * were halfway through would look like a chord you had not started. The prompt
+ * describes the TARGET, and the target does not change until the whole chord is
+ * right — at which point compose.js flashes it green and moves on.
  */
 function fillFor(midi) {
   const el = keyMap[midi];
   if (!el) return null;
   const black = isBlackKey(el);
   const down  = heldNotes.has(midi) || sustainedNotes.has(midi);
+  const shade = ink => ink[black ? 'black' : 'white'];
 
-  const wantHold  = cue.hold.includes(midi);
-  const wantPress = cue.press.includes(midi);
-  const wantLift  = cue.lift.includes(midi);
+  if (cue.lift.includes(midi))  return down ? shade(INK.lift) : defaultFill(el);
+  if (cue.hold.includes(midi))  return shade(INK.hold);    // stays blue, pressed or not
+  if (cue.press.includes(midi)) return shade(INK.press);   // stays gold, pressed or not
 
-  if (down) {
-    if (wantLift)  return INK.lift[black ? 'black' : 'white'];      // still down, should not be
-    if (wantHold)  return INK.hold[black ? 'black' : 'white'];      // correctly held
-    if (wantPress) return INK.correct[black ? 'black' : 'white'];   // just landed it
-    return Piano.velocityToColor(heldNotes.get(midi) || 64, black);
-  }
-  if (wantHold)  return INK.hold[black ? 'black' : 'white'];        // press and hold
-  if (wantPress) return INK.press[black ? 'black' : 'white'];       // press
-  return defaultFill(el);                                          // lift cue, already lifted
+  return down ? Piano.velocityToColor(heldNotes.get(midi) || 64, black) : defaultFill(el);
 }
 
 function repaintKey(midi) {

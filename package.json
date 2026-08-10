@@ -1,5 +1,5 @@
 {
-  "name": "Voice Me",
+  "name": "voice-me",
   "version": "0.1.0",
   "description": "MIDI keyboard visualizer and compositional AI assistant",
   "main": "src/main/main.js",

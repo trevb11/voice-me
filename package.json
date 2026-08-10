@@ -6,6 +6,9 @@
   "scripts": {
     "test": "node test/harmony.test.js",
     "test:ui": "electron test/ui/main.js",
+    "samples": "python3 build/install-samples.py",
+    "icon": "python3 build/make-icon.py",
+    "prebuild": "python3 build/check-samples.py",
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder --mac",
@@ -37,17 +40,7 @@
     },
     "files": [
       "src/**/*",
-      "!src/renderer/sounds/**",
       "LICENSE"
-    ],
-    "extraResources": [
-      {
-        "from": "src/renderer/sounds/Samples",
-        "to": "app/src/renderer/sounds/Samples",
-        "filter": [
-          "**/*.wav"
-        ]
-      }
     ]
   },
   "author": "Jared Silverstein",

@@ -10,6 +10,9 @@ played, suggests where to go next, and shows it on a grand staff.
 npm start          # run the app
 npm run dev        # run with detached DevTools
 npm test           # harmony invariants (node, no framework)
+npm run test:ui    # compose-mode flow, in Electron
+npm run samples -- <pack>   # install a sample pack + write the manifest
+npm run icon       # regenerate the app icon
 npm run rebuild    # recompile node-midi against Electron (after Electron bumps)
 npm run build      # electron-builder → .dmg + .zip
 ```
@@ -38,7 +41,7 @@ Three Electron processes, the usual split:
 | `app.js` | `VoiceMe`, `VoiceMeBus` | MIDI wiring, key lighting, chord readout |
 | `voicings.js` | `VoicingLibrary` | Static curated voicing data |
 | `panel.js` | `VoiceMePanel` | Voicing library browser + progression trainer |
-| `audio.js` | `AudioEngine` | Rhodes sampler, 4 velocity layers |
+| `audio.js` | `AudioEngine` | Sampled instrument, driven by `sounds/instrument.json` |
 | `compose.js` | `Compose` | Compose mode: the device tree |
 | `notation.js` | `VoiceMeNotation` | Grand staff (VexFlow) |
 | `settings.js` | `VoiceMeSettings` | Theme picker |
@@ -193,6 +196,36 @@ Two families are exempt from the strict root assertion because the ambiguity is
 in the music: `dim7` is symmetric, and inverted (`invertBass`) shapes are
 genuinely ambiguous — C6 over E really is Am7/E.
 
+## The sampled instrument
+
+`audio.js` knows nothing about any particular sample pack. Everything comes
+from `src/renderer/sounds/instrument.json`, written by
+`build/install-samples.py` from the pack's own `.sfz`: the velocity bands,
+which pitches were sampled, and which file to play for each combination.
+Swapping instruments is re-running that script.
+
+```bash
+npm run samples -- /path/to/sample-pack     # install + write the manifest
+```
+
+Currently **jRhodes3d** (1977 Rhodes Mark I Stage 73) by Jeff Learman — 65 FLAC
+files, 5 velocity bands, 15 sampled pitches, 22 MB. **CC BY-NC 4.0**: free
+distribution is fine with attribution, selling is not without a separate
+licence from him (jjlearman@gmail.com). The credit lives in the manifest, so it
+travels with the audio; `AudioEngine.credit()` returns it for an About panel.
+
+A velocity band is identified by its **range**, not by the `_N` suffix of the
+files in it. Where a note was not recorded at some dynamic the pack substitutes
+a neighbour, so the 73–95 band is mostly `_3` files with `_4` standing in for
+six notes. Keying on the suffix silently drops those substitutes.
+
+`npm run prebuild` (automatic before `npm run build`) refuses to build if the
+manifest is missing, references a file that isn't there, or — the one that
+matters — if `sounds/` holds audio the manifest does not claim. Sample licences
+differ wildly and some forbid redistribution inside a sampler entirely; a
+leftover pack shipping by accident is a licensing problem, not a bug, and it is
+completely silent.
+
 ## Spaces in the install path
 
 Two separate things break when the app lives under a path containing a space,
@@ -214,9 +247,8 @@ sharps. `sampleUrl()` in `audio.js` handles both problems.
 
 ## Known gaps
 
-- **`src/renderer/sounds/Samples/` is empty in the exported zip only** — Jared
-  has the 80 Rhodes samples locally (`{note}-{p|mp|mf|f}.wav`, one every 3
-  semitones A0–A5). They are gitignored; 429 MB does not belong in the repo.
+- Samples are gitignored — they are large and separately licensed. Install
+  them with `npm run samples -- <pack>` after a fresh clone.
 - No linter.
 - `npm audit` reports vulnerabilities in the electron-builder dev chain; they
   don't affect the shipped app.

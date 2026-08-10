@@ -1,128 +1,122 @@
 /**
  * audio.js
- * Voice Me — Fender Rhodes sampler, 4 velocity layers.
+ * Voice Me — the sampled instrument.
  *
- * ── Why the samples are loaded by hand ─────────────────────────────────────
+ * ── The app does not know which instrument it is playing ───────────────────
  *
- * We fetch and decode each sample ourselves instead of handing Tone.Sampler a
- * `urls` map, because Tone's URL handling breaks on any install path
- * containing a space.
+ * Everything comes from `sounds/instrument.json`, written by
+ * build/install-samples.py from the pack's own .sfz: the velocity bands, which
+ * pitches were sampled, and which file to play for each combination. Swapping
+ * instruments is re-running that script — no code changes, no hardcoded note
+ * lists. That matters because the current pack is CC BY-NC and may have to be
+ * replaced.
  *
- * Tone normalises a sample URL by re-encoding the whole pathname a segment at
- * a time: `(a.pathname + a.hash).split('/').map(encodeURIComponent)`. The
- * pathname it starts from is ALREADY percent-encoded, so a folder called
- * "Voice Me" arrives as `Voice%20Me` and comes out as `Voice%2520Me` — a path
- * that does not exist. Every fetch fails, the load promise never settles, and
- * the Sound button spins on "Loading…" forever with no error.
+ * ── Why the samples are fetched and decoded by hand ────────────────────────
+ *
+ * Not by handing Tone.Sampler a `urls` map, because Tone's URL handling breaks
+ * on any install path containing a space. Tone normalises a sample URL by
+ * re-encoding the whole pathname a segment at a time:
+ * `(a.pathname + a.hash).split('/').map(encodeURIComponent)`. The pathname it
+ * starts from is ALREADY percent-encoded, so a folder called "Voice Me"
+ * arrives as `Voice%20Me` and comes out as `Voice%2520Me` — a path that does
+ * not exist. Every fetch fails, the load promise never settles, and the Sound
+ * button spins on "Loading…" forever with no error.
  *
  * That is not a corner case: `productName` is "Voice Me", so the packaged app
  * lives at `/Applications/Voice Me.app/` and would ship with silent audio.
- *
- * Encoding only the FILENAME against an absolute directory URL sidesteps it,
- * and handles the sharps at the same time — `D#1-p.wav` must become
- * `D%231-p.wav` or the `#` is read as a URL fragment.
+ * Encoding only the FILENAME against an absolute directory URL sidesteps it.
  */
 
 let   audioEnabled  = false;
 let   samplersReady = false;
 let   loadError     = null;
-const activeNotes   = new Map();   // midi → layer name
+let   instrument    = null;          // the parsed manifest
+const samplers      = [];            // one per velocity band, index-aligned
+const activeNotes   = new Map();     // midi → band index
 
-// ── Velocity layers ────────────────────────────────────────────────────────
-
-function getLayer(velocity) {
-  if (velocity <= 40)  return 'p';
-  if (velocity <= 75)  return 'mp';
-  if (velocity <= 100) return 'mf';
-  return 'f';
-}
-
-const LAYERS = ['p', 'mp', 'mf', 'f'];
-
-// One sample every 3 semitones — Tone interpolates between them.
-const SAMPLE_NOTES = [
-  'A0',
-  'C1',  'D#1', 'F#1', 'A1',
-  'C2',  'D#2', 'F#2', 'A2',
-  'C3',  'D#3', 'F#3', 'A3',
-  'C4',  'D#4', 'F#4', 'A4',
-  'C5',  'D#5', 'F#5', 'A5',
-];
+const MANIFEST_URL = './sounds/instrument.json';
 
 // ── Loading ────────────────────────────────────────────────────────────────
 
-function sampleDir() {
-  return new URL('./sounds/Samples/', document.baseURI);
+function soundsUrl(relative) {
+  // Only the final path component is encoded — see the note above.
+  const dir = new URL('./sounds/', document.baseURI);
+  const parts = relative.split('/').map(encodeURIComponent).join('/');
+  return new URL(parts, dir).href;
 }
 
-/** Absolute URL with ONLY the filename encoded — see the note at the top. */
-function sampleUrl(fileName) {
-  return new URL(encodeURIComponent(fileName), sampleDir()).href;
-}
-
-async function decodeSample(fileName) {
-  const res = await fetch(sampleUrl(fileName));
-  if (!res.ok) throw new Error(`${fileName} — HTTP ${res.status}`);
+async function decodeSample(file) {
+  const res = await fetch(soundsUrl(`${instrument.dir}/${file}`));
+  if (!res.ok) throw new Error(`${file} — HTTP ${res.status}`);
   return Tone.context.rawContext.decodeAudioData(await res.arrayBuffer());
 }
 
-async function buildSampler(layer, destination) {
-  const sampler = new Tone.Sampler().connect(destination);
-
-  const results = await Promise.all(SAMPLE_NOTES.map(async (note) => {
-    try   { return { note, buffer: await decodeSample(`${note}-${layer}.wav`) }; }
-    catch (err) { return { note, err }; }
-  }));
-
-  results.forEach(r => {
-    if (r.buffer) sampler.add(r.note, new Tone.ToneAudioBuffer(r.buffer));
-  });
-
-  return { sampler, missing: results.filter(r => r.err).map(r => r.note) };
+/** Which velocity band does this stroke belong to? */
+function bandFor(velocity) {
+  const layers = instrument.layers;
+  for (const l of layers) {
+    if (velocity >= l.loVel && velocity <= l.hiVel) return l.index;
+  }
+  return layers[layers.length - 1].index;
 }
 
-const samplers    = {};
-let   loadPromise = null;
+let loadPromise = null;
 
 function initSamplers() {
   if (loadPromise) return loadPromise;
 
-  Tone.context.latencyHint     = 'interactive';
-  Tone.context.lookAhead       = 0.01;
-  Tone.context.updateInterval  = 0.01;
+  Tone.context.latencyHint    = 'interactive';
+  Tone.context.lookAhead      = 0.01;
+  Tone.context.updateInterval = 0.01;
 
   const reverb    = new Tone.Reverb({ decay: 2.5, wet: 0.15 });
   const masterVol = new Tone.Volume(-6);
   reverb.connect(masterVol);
   masterVol.toDestination();
 
-  loadPromise = Promise.all(LAYERS.map(layer => buildSampler(layer, reverb)))
-    .then((built) => {
-      const missing = [];
-      built.forEach(({ sampler, missing: gone }, i) => {
-        samplers[LAYERS[i]] = sampler;
-        gone.forEach(n => missing.push(`${n}-${LAYERS[i]}`));
-      });
+  loadPromise = (async () => {
+    const res = await fetch(new URL(MANIFEST_URL, document.baseURI).href);
+    if (!res.ok) throw new Error(`no instrument installed (${MANIFEST_URL}) — run build/install-samples.py`);
+    instrument = await res.json();
 
-      if (missing.length === LAYERS.length * SAMPLE_NOTES.length) {
-        // Nothing loaded at all — say so instead of spinning forever.
-        loadError = `no samples found in ${sampleDir().pathname}`;
-        console.error('[Audio]', loadError);
-      } else if (missing.length) {
-        console.warn(`[Audio] ${missing.length} sample(s) missing:`, missing.slice(0, 8).join(', '),
-                     missing.length > 8 ? `…and ${missing.length - 8} more` : '');
-        samplersReady = true;
-      } else {
-        samplersReady = true;
-        console.log('[Audio] Rhodes samples loaded');
+    // A file can serve more than one band, so decode the unique set once.
+    const needed = new Set();
+    instrument.zones.forEach(z => Object.values(z.files).forEach(f => needed.add(f)));
+
+    const buffers = new Map();
+    const missing = [];
+    await Promise.all([...needed].map(async (file) => {
+      try   { buffers.set(file, await decodeSample(file)); }
+      catch (err) { missing.push(file); }
+    }));
+
+    if (buffers.size === 0) {
+      throw new Error(`could not load any samples from sounds/${instrument.dir}/`);
+    }
+    if (missing.length) {
+      console.warn(`[Audio] ${missing.length} sample(s) missing:`, missing.slice(0, 6).join(', '));
+    }
+
+    for (const layer of instrument.layers) {
+      const sampler = new Tone.Sampler().connect(reverb);
+      for (const zone of instrument.zones) {
+        const file = zone.files[String(layer.index)];
+        const buf  = file && buffers.get(file);
+        if (buf) sampler.add(Tone.Frequency(zone.midi, 'midi').toNote(), new Tone.ToneAudioBuffer(buf));
       }
-      updateAudioBtn();
-    })
-    .catch((err) => {
-      loadError = err.message;
-      console.error('[Audio] failed to load samples:', err);
-      updateAudioBtn();
-    });
+      samplers[layer.index] = sampler;
+    }
+
+    samplersReady = true;
+    console.log(`[Audio] ${instrument.name} loaded — ${buffers.size} samples, ` +
+                `${instrument.layers.length} velocity layers`);
+    console.log(`[Audio] ${instrument.credit} (${instrument.licence})`);
+    updateAudioBtn();
+  })().catch((err) => {
+    loadError = err.message;
+    console.error('[Audio]', err);
+    updateAudioBtn();
+  });
 
   return loadPromise;
 }
@@ -131,17 +125,18 @@ function initSamplers() {
 
 function startNote(midi, velocity) {
   if (!audioEnabled || !samplersReady) return;
-  const layer = getLayer(velocity);
-  const note  = Tone.Frequency(midi, 'midi').toNote();
+  const band = bandFor(velocity);
+  const sampler = samplers[band];
+  if (!sampler) return;
   stopNote(midi);
-  samplers[layer].triggerAttack(note, Tone.context.currentTime, velocity / 127);
-  activeNotes.set(midi, layer);
+  sampler.triggerAttack(Tone.Frequency(midi, 'midi').toNote(), Tone.context.currentTime);
+  activeNotes.set(midi, band);
 }
 
 function stopNote(midi) {
-  const layer = activeNotes.get(midi);
-  if (!layer) return;
-  samplers[layer].triggerRelease(Tone.Frequency(midi, 'midi').toNote(), Tone.context.currentTime);
+  const band = activeNotes.get(midi);
+  if (band === undefined) return;
+  samplers[band]?.triggerRelease(Tone.Frequency(midi, 'midi').toNote(), Tone.context.currentTime);
   activeNotes.delete(midi);
 }
 
@@ -164,7 +159,7 @@ function updateAudioBtn() {
     btn.classList.remove('active');
   } else {
     btn.textContent = audioEnabled ? '⊙ Sound' : '○ Sound';
-    btn.title       = '';
+    btn.title       = instrument ? `${instrument.credit} — ${instrument.licence}` : '';
     btn.classList.toggle('active', audioEnabled);
   }
 }
@@ -190,4 +185,12 @@ if (document.readyState === 'loading') {
   wireAudioButton();
 }
 
-window.AudioEngine = { startNote, stopNote, stopAllNotes, toggleAudio };
+window.AudioEngine = {
+  startNote, stopNote, stopAllNotes, toggleAudio,
+  /** The attribution the sample licence requires — for an About panel. */
+  credit: () => instrument && {
+    name: instrument.name, instrument: instrument.instrument,
+    credit: instrument.credit, licence: instrument.licence,
+    licenceUrl: instrument.licenceUrl, source: instrument.source,
+  },
+};

@@ -33,7 +33,7 @@
         "dmg",
         "zip"
       ],
-      "hardenedRuntime": true,
+      "hardenedRuntime": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "icon": "build/icon.icns"
@@ -41,7 +41,8 @@
     "files": [
       "src/**/*",
       "LICENSE"
-    ]
+    ],
+    "afterPack": "build/after-pack.js"
   },
   "author": "Jared Silverstein",
   "license": "MIT"

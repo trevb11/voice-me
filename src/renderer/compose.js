@@ -23,7 +23,8 @@ const compose = {
   trail:        [],     // committed chords, each tagged with the device it came from
   pending:      null,   // { branch, step } while walking a device
   practice:     null,   // { idx, solved } while re-playing a committed chord
-  key:          null,
+  key:          null,   // the key actually in use, declared or inferred
+  declaredKey:  null,   // { tonicPc, mode } when the player has named one; null = auto
   prevHeld:     new Set(),
   spice:        1,      // 0 basic · 1 colourful · 2 complex — WHICH notes
   shape:        'closed', // minimal · closed · open · cluster — HOW they spread
@@ -41,7 +42,8 @@ function generateBranches(chord) {
   if (!window.Harmony) return [];
   const result = Harmony.suggest(
     chord.notes || [], chord.rootPC, chord.quality,
-    compose.trail.slice(0, -1), compose.spice, compose.shape
+    compose.trail.slice(0, -1), compose.spice, compose.shape,
+    compose.declaredKey
   );
   compose.key = result.key;
   return result.branches;
@@ -204,8 +206,13 @@ function drawRootChord(svg, chord) {
   add(ROOT_Y + 21, chord.name, { size: 20, italic: true, weight: '600', cls: 'root-chord-text' });
 
   if (compose.key) {
-    add(ROOT_Y + 41, `in ${Harmony.noteName(compose.key.tonicPc, false)} ${compose.key.mode}`,
-        { size: 10, mono: true, spacing: '0.1em', fill: 'var(--text-muted)', opacity: 0.55 });
+    const declared = compose.key.declared;
+    add(ROOT_Y + 41,
+        `in ${Harmony.noteName(compose.key.tonicPc, false)} ${compose.key.mode}` +
+        (declared ? '' : ' (heard)'),
+        { size: 10, mono: true, spacing: '0.1em',
+          fill: declared ? 'var(--accent)' : 'var(--text-muted)',
+          opacity: declared ? 0.8 : 0.55 });
   }
 }
 
@@ -358,6 +365,16 @@ function commitDevice(branch) {
   window.VoiceMe?.clearArrows();
   window.VoiceMe?.clearCue();
   floatChime();
+
+  // A modulation device does not merely suggest chords — it relocates home.
+  // Adopt the new centre so the tree reasons in the key you just arrived in
+  // rather than continuing to explain everything from the old one.
+  if (branch.modulatesTo) {
+    compose.declaredKey = branch.modulatesTo;
+    renderKeyDial();
+    updateStatus(`Modulated to ${Harmony.noteName(branch.modulatesTo.tonicPc, false)} ` +
+                 `${branch.modulatesTo.mode}`);
+  }
 
   const landed = branch.resolvesTo || branch.sequence[branch.sequence.length - 1];
   triggerLeafFall(branch);
@@ -604,7 +621,43 @@ function regenerate() {
   renderTree();
 }
 
+const KEY_ROOTS = [0,1,2,3,4,5,6,7,8,9,10,11];
+
+function renderKeyDial() {
+  const el = document.getElementById('key-dial');
+  if (!el) return;
+  const cur = compose.declaredKey
+    ? `${compose.declaredKey.tonicPc}:${compose.declaredKey.mode}`
+    : '';
+  const opts = ['<option value="">Key: auto</option>'];
+  for (const mode of ['major', 'minor']) {
+    for (const pc of KEY_ROOTS) {
+      const label = `${Harmony.noteName(pc, false)} ${mode}`;
+      opts.push(`<option value="${pc}:${mode}">${Harmony.glyphs(label)}</option>`);
+    }
+  }
+  el.innerHTML = opts.join('');
+  el.value = cur;
+}
+
+function initKeyDial() {
+  const el = document.getElementById('key-dial');
+  if (!el || el.dataset.wired) return;
+  el.dataset.wired = '1';
+  el.addEventListener('change', () => {
+    if (!el.value) {
+      compose.declaredKey = null;
+    } else {
+      const [pcStr, mode] = el.value.split(':');
+      compose.declaredKey = { tonicPc: parseInt(pcStr, 10), mode };
+    }
+    regenerate();
+  });
+}
+
 function initDials() {
+  renderKeyDial();
+  initKeyDial();
   const spiceEl = document.getElementById('spice-dial');
   if (spiceEl) {
     const stops = [
@@ -671,7 +724,7 @@ function activateCompose() {
 function deactivateCompose() {
   Object.assign(compose, {
     active: false, currentChord: null, branches: [], trail: [],
-    pending: null, practice: null, prevHeld: new Set(),
+    pending: null, practice: null, prevHeld: new Set(), declaredKey: null,
   });
   document.body.classList.remove('compose-mode');
   hideVariantMenu();

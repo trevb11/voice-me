@@ -34,6 +34,11 @@
         <div id="held-notes-wrap">
           <div id="held-notes"></div>
         </div>
+        <!-- Key centre. Declaring it makes the suggestions functional rather
+             than guessed — a lone Gm9 is otherwise read as i in G minor when
+             you meant ii in F. "Auto" falls back to inference from the trail. -->
+        <select id="key-dial" title="Key centre for the suggestions"></select>
+
         <!-- Two independent dials: spice picks WHICH notes, shape picks HOW
              they spread across the registers. -->
         <div id="spice-dial"></div>

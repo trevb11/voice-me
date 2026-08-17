@@ -730,6 +730,140 @@ check('variants all share the branch chord root and function', () => {
   return bad;
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  9. Key centre
+//     Inference gives a lone chord a bonus for being its own tonic, so a
+//     solitary Gm9 reads as i in G minor when it was meant as ii in F — and
+//     every functional suggestion then aims at the wrong tonic. Declaring the
+//     key has to override that, and devices have to actually use it.
+// ═══════════════════════════════════════════════════════════════════════════
+
+check('a declared key overrides inference', () => {
+  const bad = [];
+  for (const seed of SEEDS) for (let tonic = 0; tonic < 12; tonic++) {
+    for (const mode of ['major', 'minor']) {
+      const { key } = H.suggest(seed.notes, seed.root, seed.q, [], 1, 'closed', { tonicPc: tonic, mode });
+      if (key.tonicPc !== tonic || key.mode !== mode) {
+        bad.push(`asked for ${NM[tonic]} ${mode}, got ${NM[key.tonicPc]} ${key.mode}`);
+      }
+      if (!key.declared) bad.push(`${NM[tonic]} ${mode}: not flagged as declared`);
+    }
+  }
+  return bad;
+});
+
+check('REGRESSION: the ii chord of a declared key is offered its V', () => {
+  const bad = [];
+  for (let tonic = 0; tonic < 12; tonic++) {
+    const iiRoot = (tonic + 2) % 12;
+    const notes  = H.voice(iiRoot, 'm9', { spice: 1, shape: 'closed' });
+    const { branches } = H.suggest(notes, iiRoot, 'm9', [], 1, 'closed', { tonicPc: tonic, mode: 'major' });
+
+    const vRoot = (tonic + 7) % 12;
+    const found = branches.some(b => b.sequence.some(
+      s => s.rootPC === vRoot && H.QUALITIES[s.quality].family === 'dominant'));
+    if (!found) {
+      bad.push(`${NM[iiRoot]}m9 in ${NM[tonic]} major: no ${NM[vRoot]}7 offered — ` +
+               branches.map(b => b.name).join(' | '));
+    }
+  }
+  return bad;
+});
+
+check('the V chord of a declared key is offered its I', () => {
+  const bad = [];
+  for (let tonic = 0; tonic < 12; tonic++) {
+    const vRoot = (tonic + 7) % 12;
+    const notes = H.voice(vRoot, '7', { spice: 1, shape: 'closed' });
+    const { branches } = H.suggest(notes, vRoot, '7', [], 1, 'closed', { tonicPc: tonic, mode: 'major' });
+    if (!branches.some(b => b.sequence.some(s => s.rootPC === tonic))) {
+      bad.push(`${NM[vRoot]}7 in ${NM[tonic]} major: never resolves to ${NM[tonic]}`);
+    }
+  }
+  return bad;
+});
+
+check('roman numerals are relative to the declared key', () => {
+  const bad = [];
+  for (let tonic = 0; tonic < 12; tonic++) {
+    const iiRoot = (tonic + 2) % 12;
+    const notes  = H.voice(iiRoot, 'm7', { spice: 1, shape: 'closed' });
+    const { branches } = H.suggest(notes, iiRoot, 'm7', [], 1, 'closed', { tonicPc: tonic, mode: 'major' });
+    for (const b of branches) {
+      if (!b.roman) { bad.push(`${NM[iiRoot]}m7 in ${NM[tonic]}: branch with no roman`); continue; }
+      // The played chord is the ii, so every path must start there.
+      if (!b.roman.startsWith('ii')) {
+        bad.push(`${NM[iiRoot]}m7 in ${NM[tonic]} major: roman starts "${b.roman.split(' ')[0]}", expected ii`);
+      }
+    }
+  }
+  return bad;
+});
+
+check('modulation devices declare a real key to land in', () => {
+  const bad = [];
+  for (const seed of SEEDS) for (let tonic = 0; tonic < 12; tonic++) {
+    const { branches } = H.suggest(seed.notes, seed.root, seed.q, [], 1, 'closed', { tonicPc: tonic, mode: 'major' });
+    for (const b of branches) {
+      if (!b.modulatesTo) continue;
+      const { tonicPc, mode } = b.modulatesTo;
+      if (!(Number.isInteger(tonicPc) && tonicPc >= 0 && tonicPc < 12)) {
+        bad.push(`${b.name}: modulatesTo tonic ${tonicPc}`);
+      }
+      if (mode !== 'major' && mode !== 'minor') bad.push(`${b.name}: modulatesTo mode "${mode}"`);
+      if (tonicPc === tonic && mode === 'major') bad.push(`${b.name}: "modulates" to the key it is already in`);
+      // The device must actually land on its new tonic.
+      const last = b.sequence[b.sequence.length - 1];
+      if (last.rootPC !== tonicPc) {
+        bad.push(`${b.name}: says it modulates to ${NM[tonicPc]} but ends on ${NM[last.rootPC]}`);
+      }
+    }
+  }
+  return bad;
+});
+
+check('a modulation leaves you somewhere the tree can keep growing', () => {
+  const bad = [];
+  for (let tonic = 0; tonic < 12; tonic++) {
+    const notes = H.voice(tonic, 'maj7', { spice: 1, shape: 'closed' });
+    const { branches } = H.suggest(notes, tonic, 'maj7', [], 1, 'closed', { tonicPc: tonic, mode: 'major' });
+    for (const b of branches.filter(x => x.modulatesTo)) {
+      const landed = b.resolvesTo;
+      const next = H.suggest(landed.notes, landed.rootPC, landed.quality, [], 1, 'closed', b.modulatesTo);
+      if (!next.branches.length) bad.push(`${b.name} → ${NM[b.modulatesTo.tonicPc]}: dead end`);
+      // In the new key the landing chord should read as the tonic.
+      const first = next.branches[0];
+      if (first && first.roman && !/^I|^i/.test(first.roman)) {
+        bad.push(`${b.name}: landed on ${landed.name} but it reads as "${first.roman.split(' ')[0]}" in the new key`);
+      }
+    }
+  }
+  return bad;
+});
+
+check('diatonic passing moves land inside the declared key', () => {
+  const bad = [];
+  const inKey = (pcv, tonic, mode) => {
+    const scale = mode === 'minor' ? [0,2,3,5,7,8,10] : [0,2,4,5,7,9,11];
+    return scale.includes(((pcv - tonic) % 12 + 12) % 12);
+  };
+  for (let tonic = 0; tonic < 12; tonic++) {
+    for (const deg of [0, 2, 4, 5, 7, 9]) {
+      const root = (tonic + deg) % 12;
+      const q = (deg === 0 || deg === 5) ? 'maj7' : (deg === 7 ? '7' : 'm7');
+      const notes = H.voice(root, q, { spice: 1, shape: 'closed' });
+      const { branches } = H.suggest(notes, root, q, [], 1, 'closed', { tonicPc: tonic, mode: 'major' });
+      for (const b of branches.filter(x => /diatonic/.test(x.device || ''))) {
+        const last = b.sequence[b.sequence.length - 1];
+        if (!inKey(last.rootPC, tonic, 'major')) {
+          bad.push(`${b.device} from ${NM[root]}${q} in ${NM[tonic]}: lands on ${NM[last.rootPC]}, outside the key`);
+        }
+      }
+    }
+  }
+  return bad;
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log('');

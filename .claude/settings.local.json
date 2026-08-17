@@ -23,7 +23,9 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(python3 build/install-samples.py /private/tmp/claude-501/-Users-jared-Voice-Me-Claude-Code/80d44b4e-8b3b-4293-ad14-ea693426a536/scratchpad/jrhodes)",
       "Bash(git -c user.name=Jared -c user.email=jaredsilversteindrums@gmail.com commit -qm 'Add BETA.md — install and orientation notes for testers *)",
-      "Bash(awk '{printf \"%-9s %s\\\\n\", $5, $9}')"
+      "Bash(awk '{printf \"%-9s %s\\\\n\", $5, $9}')",
+      "Read(//Users/jared/dont-be-sad/**)",
+      "Bash(npm install *)"
     ]
   }
 }

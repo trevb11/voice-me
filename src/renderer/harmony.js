@@ -1263,7 +1263,226 @@
   const isMajorish = q => { const f = (QUALITIES[q] || {}).family; return f === 'major'; };
   const isMinorish = q => { const f = (QUALITIES[q] || {}).family; return f === 'minor'; };
 
+  // The seven chords of a key, by scale degree in semitones. Having these means
+  // a passing move can land somewhere that belongs to the key instead of
+  // somewhere that merely sits a step away — Gm9 in F should pass up to Am7,
+  // the iii, not to the Am7♭5 you get by treating Gm as a tonic.
+  const DIATONIC = {
+    major: [[0, 'maj7'], [2, 'm7'], [4, 'm7'], [5, 'maj7'], [7, '7'], [9, 'm7'], [11, 'm7b5']],
+    minor: [[0, 'm7'], [2, 'm7b5'], [3, 'maj7'], [5, 'm7'], [7, 'm7'], [8, 'maj7'], [10, '7']],
+  };
+
+  /** The diatonic chord `steps` scale-steps above `fromDegree` in the key. */
+  function diatonicStep(keyTonic, mode, fromDegree, steps) {
+    const table = DIATONIC[mode] || DIATONIC.major;
+    let i = table.findIndex(([iv]) => iv === pc(fromDegree));
+    if (i === -1) {
+      // Chromatic chord: fall back to the nearest diatonic degree below.
+      i = 0;
+      for (let j = 0; j < table.length; j++) if (table[j][0] <= pc(fromDegree)) i = j;
+    }
+    const [iv, quality] = table[(i + steps + table.length * 4) % table.length];
+    return { rootPC: pc(keyTonic + iv), quality, degree: iv };
+  }
+
   const DEVICES = [
+    // ═══════════════════════════════════════════════════════════════════
+    //  Devices that know WHERE IN THE KEY the chord sits
+    //
+    //  Everything below this block treats the chord in front of it as a local
+    //  tonic, which is fine for colour but wrong for function: a Gm9 in F is a
+    //  ii and wants its V, and no amount of chord-relative reasoning will find
+    //  C7 from it. These fire only when a key centre is known, and they carry
+    //  extra weight because a real functional destination beats a local trick.
+    //
+    //  Degrees are semitones above the tonic: 0=I, 2=ii, 4=iii, 5=IV, 7=V, 9=vi.
+    // ═══════════════════════════════════════════════════════════════════
+    {
+      id: 'ii-V-I', slot: 'cadence', weight: 6,
+      label: 'Two-five-one',
+      roman: 'ii7 → V7 → I',
+      applies: c => c.keyKnown && c.keyMode === 'major' && c.degree === 2 && isMinorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 7), quality: '7'    },
+        { rootPC: c.keyTonic,         quality: 'maj7' },
+      ],
+      why: c => `${noteName(c.root, false)}m is the ii of ${noteName(c.keyTonic, false)} — this is its V and its home`,
+    },
+    {
+      id: 'minor-ii-V-i', slot: 'cadence', weight: 6,
+      label: 'Minor two-five-one',
+      roman: 'iiø7 → V7alt → i',
+      applies: c => c.keyKnown && c.keyMode === 'minor' && c.degree === 2,
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 7), quality: '7alt' },
+        { rootPC: c.keyTonic,         quality: 'm7'   },
+      ],
+      why: c => `the ii of ${noteName(c.keyTonic, false)} minor, heading home the minor way`,
+    },
+    {
+      id: 'V-I-in-key', slot: 'cadence', weight: 6,
+      label: 'Five to one',
+      roman: 'V7 → I',
+      applies: c => c.keyKnown && c.degree === 7 && isDomQ(c.quality),
+      chords: c => [{ rootPC: c.keyTonic,
+                      quality: c.keyMode === 'minor' ? 'm7' : 'maj7' }],
+      why: c => `the dominant of ${noteName(c.keyTonic, false)} — resolve it`,
+    },
+    {
+      id: 'vi-ii-V', slot: 'cadence', weight: 5,
+      label: 'Six-two-five',
+      roman: 'vi7 → ii7 → V7',
+      applies: c => c.keyKnown && c.keyMode === 'major' && c.degree === 9 && isMinorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 2), quality: 'm7' },
+        { rootPC: pc(c.keyTonic + 7), quality: '7'  },
+      ],
+      why: c => `the vi of ${noteName(c.keyTonic, false)} — round the cycle toward the dominant`,
+    },
+    {
+      id: 'iii-vi-ii', slot: 'cadence', weight: 4,
+      label: 'Three-six-two',
+      roman: 'iii7 → vi7 → ii7',
+      applies: c => c.keyKnown && c.keyMode === 'major' && c.degree === 4 && isMinorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 9), quality: 'm7' },
+        { rootPC: pc(c.keyTonic + 2), quality: 'm7' },
+      ],
+      why: c => `the iii of ${noteName(c.keyTonic, false)}, starting the descent by fifths`,
+    },
+    {
+      id: 'IV-V-I', slot: 'cadence', weight: 5,
+      label: 'Four-five-one',
+      roman: 'IV → V7 → I',
+      applies: c => c.keyKnown && c.keyMode === 'major' && c.degree === 5 && isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 7), quality: '7'    },
+        { rootPC: c.keyTonic,         quality: 'maj7' },
+      ],
+      why: c => `the IV of ${noteName(c.keyTonic, false)} — through the dominant and home`,
+    },
+    {
+      id: 'IV-to-iv', slot: 'descending', weight: 4,
+      label: 'Four turns minor',
+      roman: 'IV → iv → I',
+      applies: c => c.keyKnown && c.keyMode === 'major' && c.degree === 5 && isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 5), quality: 'm7'   },
+        { rootPC: c.keyTonic,         quality: 'maj7' },
+      ],
+      why: c => `the subdominant darkens on its way back to ${noteName(c.keyTonic, false)}`,
+    },
+    {
+      id: 'bVII-I', slot: 'colour', weight: 3,
+      label: 'Backdoor cadence',
+      roman: '♭VII7 → I',
+      applies: c => c.keyKnown && c.degree === 10 && isDomQ(c.quality),
+      chords: c => [{ rootPC: c.keyTonic, quality: 'maj7' }],
+      why: c => `the back door into ${noteName(c.keyTonic, false)} — no leading tone, no push`,
+    },
+
+    // ── Diatonic passing moves, aimed at chords that belong to the key ───
+    {
+      id: 'diatonic-passing-dim-up', slot: 'ascending', weight: 5,
+      label: 'Passing diminished up the scale',
+      roman: '♯i°7 → next degree',
+      applies: c => c.keyKnown,
+      chords: (c) => {
+        const up = diatonicStep(c.keyTonic, c.keyMode, c.degree, 1);
+        return [
+          { rootPC: pc(c.root + 1), quality: 'dim7' },
+          { rootPC: up.rootPC,      quality: up.quality },
+        ];
+      },
+      why: (c) => {
+        const up = diatonicStep(c.keyTonic, c.keyMode, c.degree, 1);
+        return `the bass climbs ${noteName(c.root, false)}→${noteName(c.root + 1, false)}→` +
+               `${noteName(up.rootPC, false)}, landing inside the key`;
+      },
+    },
+    {
+      id: 'diatonic-walk-down', slot: 'descending', weight: 5,
+      label: 'Step down the scale',
+      roman: 'I → I/♮7 → previous degree',
+      applies: c => c.keyKnown,
+      chords: (c) => {
+        const down = diatonicStep(c.keyTonic, c.keyMode, c.degree, -1);
+        return [
+          { rootPC: c.root,      quality: c.quality, bassPc: pc(c.root - 1) },
+          { rootPC: down.rootPC, quality: down.quality },
+        ];
+      },
+      why: (c) => {
+        const down = diatonicStep(c.keyTonic, c.keyMode, c.degree, -1);
+        return `a passing bass note carries you down to ${noteName(down.rootPC, false)}, ` +
+               `the degree below in ${noteName(c.keyTonic, false)}`;
+      },
+    },
+
+    // ── Modulation: these MOVE the key centre ────────────────────────────
+    // `modulatesTo` tells compose mode the tonal home has changed, so the tree
+    // starts reasoning in the new key instead of pretending nothing happened.
+    {
+      id: 'modulate-to-IV', slot: 'secondary', weight: 4,
+      label: 'Modulate to four',
+      roman: 'I → I7 → IV (new I)',
+      applies: c => c.keyKnown && c.degree === 0 && isMajorish(c.quality),
+      chords: c => [
+        { rootPC: c.keyTonic,         quality: '7', bassPc: pc(c.keyTonic + 4) },
+        { rootPC: pc(c.keyTonic + 5), quality: 'maj7' },
+      ],
+      modulatesTo: c => ({ tonicPc: pc(c.keyTonic + 5), mode: 'major' }),
+      why: c => `turn the tonic into a dominant and ${noteName(c.keyTonic + 5, false)} becomes home`,
+    },
+    {
+      id: 'modulate-to-V', slot: 'secondary', weight: 4,
+      label: 'Modulate to five',
+      roman: 'I → II7 → V (new I)',
+      applies: c => c.keyKnown && c.degree === 0 && isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 2), quality: '7'    },
+        { rootPC: pc(c.keyTonic + 7), quality: 'maj7' },
+      ],
+      modulatesTo: c => ({ tonicPc: pc(c.keyTonic + 7), mode: 'major' }),
+      why: c => `up a fifth — ${noteName(c.keyTonic + 7, false)} takes over as home`,
+    },
+    {
+      id: 'modulate-to-relative-minor', slot: 'secondary', weight: 3,
+      label: 'Modulate to the relative minor',
+      roman: 'I → V7/vi → vi (new i)',
+      applies: c => c.keyKnown && c.keyMode === 'major' && c.degree === 0 && isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 4), quality: '7'  },
+        { rootPC: pc(c.keyTonic + 9), quality: 'm7' },
+      ],
+      modulatesTo: c => ({ tonicPc: pc(c.keyTonic + 9), mode: 'minor' }),
+      why: c => `${noteName(c.keyTonic + 9, false)} minor is the same notes seen from a darker angle`,
+    },
+    {
+      id: 'modulate-relative-major', slot: 'secondary', weight: 3,
+      label: 'Modulate to the relative major',
+      roman: 'i → ♭III (new I)',
+      applies: c => c.keyKnown && c.keyMode === 'minor' && c.degree === 0,
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 10), quality: '7'    },
+        { rootPC: pc(c.keyTonic + 3),  quality: 'maj7' },
+      ],
+      modulatesTo: c => ({ tonicPc: pc(c.keyTonic + 3), mode: 'major' }),
+      why: c => `out of the minor into ${noteName(c.keyTonic + 3, false)} major`,
+    },
+    {
+      id: 'modulate-up-a-semitone', slot: 'colour', weight: 1,
+      label: 'Shift up a half step',
+      roman: 'V7/♭II → ♭II (new I)',
+      applies: c => c.keyKnown && c.degree === 0 && isMajorish(c.quality),
+      chords: c => [
+        { rootPC: pc(c.keyTonic + 8), quality: '7'    },
+        { rootPC: pc(c.keyTonic + 1), quality: 'maj7' },
+      ],
+      modulatesTo: c => ({ tonicPc: pc(c.keyTonic + 1), mode: 'major' }),
+      why: c => `the whole thing lifts a half step into ${noteName(c.keyTonic + 1, false)}`,
+    },
+
     // ── SHADOW: descending bass ──────────────────────────────────────────
     {
       id: 'one-to-six-passing-bass', slot: 'descending', weight: 2,
@@ -1645,16 +1864,32 @@
    * `suggest(prevNotes, rootPC, quality, trail, spice, shape)`
    *   → { key, branches: [{ slot, label, rootPC, quality, bassPc, notes, mapping, reason, … }] }
    */
-  function suggest(prevNotes, rootPC, quality, trail, spice, shape) {
+  function suggest(prevNotes, rootPC, quality, trail, spice, shape, keyOverride) {
     const root   = pc(rootPC);
     const q      = QUALITIES[quality] ? quality : 'maj7';
     const chords = [...(trail || []).map(c => ({ rootPC: c.rootPC, quality: c.quality })), { rootPC: root, quality: q }];
-    const key      = inferKey(chords);
+
+    // A declared key centre beats inference. Inference on a lone chord gives it
+    // a bonus for being its own tonic, so a solitary Gm9 reads as i in G minor
+    // rather than ii in F — and every functional suggestion is then aimed at
+    // the wrong tonic. Telling the engine the key is the fix.
+    const key = (keyOverride && keyOverride.tonicPc != null)
+      ? { tonicPc: pc(keyOverride.tonicPc), mode: keyOverride.mode || 'major', declared: true }
+      : inferKey(chords);
     const keyTonic = key ? key.tonicPc : null;
 
     const prevBassPc = (prevNotes && prevNotes.length) ? pc(Math.min(...prevNotes)) : null;
-    const ctx = { root, quality: q, keyTonic, keyMode: key ? key.mode : null,
-                  prevNotes: prevNotes || [], prevBassPc };
+    const ctx = {
+      root, quality: q,
+      keyTonic, keyMode: key ? key.mode : null,
+      keyKnown: keyTonic != null,
+      // Which scale degree the played chord occupies. This is what lets a
+      // device say "I apply to the ii chord" instead of assuming the chord in
+      // front of it is the tonic.
+      degree:  keyTonic == null ? null : pc(root - keyTonic),
+      atTonic: keyTonic == null || pc(root - keyTonic) === 0,
+      prevNotes: prevNotes || [], prevBassPc,
+    };
 
     // ── 1. Devices first — the hard-wired theory ──
     const bySlot = {};
@@ -1670,8 +1905,13 @@
       const held  = commonTones(prevNotes, first.notes);
       const bass  = bassMotionBonus(prevBassPc, { root: first.rootPC, q: first.quality, bassPc: first.bassPc }, keyTonic);
 
+      let modulation = null;
+      if (device.modulatesTo) {
+        try { modulation = device.modulatesTo(ctx); } catch (_) { modulation = null; }
+      }
+
       (bySlot[device.slot] = bySlot[device.slot] || []).push({
-        device, sequence,
+        device, sequence, modulation,
         // Devices are all musically valid, so the score only breaks ties
         // between them. Common tones dominate: holding voices while the bass
         // moves is the sound we are actually after. `weight` lets a device
@@ -1737,7 +1977,10 @@
           slot, label,
           device:   pick.device.id,
           deviceLabel: pick.device.label,
-          roman:    pick.device.roman,
+          roman:    romanPath(root, q, pick.sequence, keyTonic) || pick.device.roman,
+          // Non-null when playing this device moves the tonal centre; compose
+          // mode adopts it as the new key.
+          modulatesTo: pick.modulation,
           sequence: pick.sequence,
           // The tip shows the whole move: "A7/C♯ → Dm7"
           name:     pick.sequence.map(s => s.name).join(' → '),
@@ -1775,7 +2018,8 @@
         slot, label,
         device: null,
         deviceLabel: null,
-        roman: romanOf(alt.root, alt.q, keyTonic),
+        roman: romanPath(root, q, [one], keyTonic) || romanOf(alt.root, alt.q, keyTonic),
+        modulatesTo: null,
         sequence: [one],
         name: one.name,
         reason: alt.bass.label ? `${alt.reason} · ${alt.bass.label}` : alt.reason,
@@ -1806,6 +2050,25 @@
   // ── Roman numerals ──────────────────────────────────────────────────────
 
   const NUMERALS = ['I','♭II','II','♭III','III','IV','♯IV','V','♭VI','VI','♭VII','VII'];
+
+  /**
+   * The roman-numeral motion of a device, computed from the KEY rather than
+   * taken from the device's own label. A device's literal string is only right
+   * when the chord happens to be the tonic; once devices are degree-aware the
+   * numerals have to come from where the chords actually sit.
+   */
+  function romanPath(rootPC, quality, sequence, keyTonic) {
+    if (keyTonic == null) return null;
+    const parts = [romanOf(rootPC, quality, keyTonic)];
+    for (const step of sequence) {
+      let r = romanOf(step.rootPC, step.quality, keyTonic);
+      if (step.bassPc != null && pc(step.bassPc) !== pc(step.rootPC)) {
+        r += '/' + noteName(step.bassPc, false);
+      }
+      parts.push(r);
+    }
+    return parts.join(' → ');
+  }
 
   function romanOf(rootPC, quality, keyTonic) {
     if (keyTonic == null) return '';

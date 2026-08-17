@@ -124,6 +124,31 @@ re-playing a voicing you already chose to get it under your fingers. Practice
 suppresses the tree-rebuild that free play would otherwise trigger. Escape,
 Backspace, or picking a branch leaves it.
 
+## The key centre
+
+`suggest()` takes an optional declared key. Without one it infers from the
+trail — and inference gives a lone chord a **+0.3 bonus for being its own
+tonic**, so a solitary `Gm9` reads as **i in G minor** when it was meant as
+**ii in F**, and every functional suggestion then aims at the wrong tonic.
+Declaring the key overrides that; the UI is the `Key:` dropdown in compose mode
+and `Auto` restores inference.
+
+The key is what makes devices *functional* rather than chord-relative. `ctx`
+carries `degree` (semitones above the tonic), and the devices at the top of the
+table gate on it: `ii-V-I` fires when `degree === 2`, `V-I` when `degree === 7`.
+Without that, a device can only ever treat the chord in front of it as a local
+tonic, which is why `Gm9` used to offer `i → iv` instead of `ii → V`.
+
+Roman numerals come from `romanPath()`, computed against the key. A device's own
+`roman` string is only a fallback — it is written as if its chord were the
+tonic, which stops being true the moment devices are degree-aware.
+
+Devices with `modulatesTo` **move the key**. Compose mode adopts the returned
+key when the device commits, so the tree carries on reasoning in the key you
+arrived in. Diatonic passing moves (`diatonicStep()`) also use the key, so a
+passing chord lands on something that belongs there — `Gm9` in F passes up to
+`Am7` (iii), not the `Am7♭5` you get from treating Gm as a tonic.
+
 ## Devices
 
 Branches are **named harmonic moves**, not scoring winners. Search only breaks
@@ -178,7 +203,7 @@ carries the motion**:
 
 ## Testing
 
-`npm test` runs 43 invariants over every root × quality × spice × shape, plus
+`npm test` runs 50 invariants over every root × quality × spice × shape, plus
 realistic human voicings (close, shell, rootless) as voice-leading seeds. No
 framework.
 

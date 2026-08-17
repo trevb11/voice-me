@@ -1359,3 +1359,24 @@ body.compose-mode #shape-dial {
 
 /* Roman-numeral motion above each branch tip. */
 .branch-roman-text { pointer-events: none; }
+
+/* ── Key dial ───────────────────────────────────────────────────────────── */
+/* Compose-mode only, like the other two dials. Declaring the key is what turns
+   the suggestions from guesses into functional harmony. */
+
+#key-dial {
+  display: none;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: 'SF Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+body.compose-mode #key-dial {
+  display: inline-block;
+}
+#key-dial:hover { border-color: var(--accent); }

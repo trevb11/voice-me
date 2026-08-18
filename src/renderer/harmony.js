@@ -1381,6 +1381,39 @@
       why: c => `the back door into ${noteName(c.keyTonic, false)} — no leading tone, no push`,
     },
 
+    // ── Reinterpretation: hear the chord as a different scale degree ─────
+    //
+    // A lone minor 7th is far more often a ii than a i — Gm7 usually means "ii
+    // of F", not "i of G minor". But inference cannot know that: scoring a
+    // single chord gives it a bonus for being its own tonic, so it lands on
+    // G minor and never offers C7.
+    //
+    // Rather than guess, offer the reading as a branch. Taking it commits to
+    // the key, which is why it modulates: choosing "this is a ii" IS declaring
+    // where home is. Suppressed when the chord already sits on degree 2, since
+    // ii-V-I covers that properly.
+    {
+      id: 'treat-as-ii', slot: 'secondary', weight: 5,
+      label: 'Hear it as a two',
+      roman: 'ii7 → V7 → I',
+      applies: c => isMinorish(c.quality) && c.degree !== 2,
+      chords: c => [
+        { rootPC: pc(c.root + 5),  quality: '7'    },
+        { rootPC: pc(c.root + 10), quality: 'maj7' },
+      ],
+      modulatesTo: c => ({ tonicPc: pc(c.root + 10), mode: 'major' }),
+      why: c => `heard as the ii of ${noteName(c.root + 10, false)} — this is its V and its tonic`,
+    },
+    {
+      id: 'treat-as-V', slot: 'cadence', weight: 4,
+      label: 'Hear it as a five',
+      roman: 'V7 → I',
+      applies: c => isDomQ(c.quality) && c.degree !== 7,
+      chords: c => [{ rootPC: pc(c.root + 5), quality: 'maj7' }],
+      modulatesTo: c => ({ tonicPc: pc(c.root + 5), mode: 'major' }),
+      why: c => `a dominant wants to fall a fifth — hear ${noteName(c.root + 5, false)} as home`,
+    },
+
     // ── Diatonic passing moves, aimed at chords that belong to the key ───
     {
       id: 'diatonic-passing-dim-up', slot: 'ascending', weight: 5,
@@ -1977,7 +2010,13 @@
           slot, label,
           device:   pick.device.id,
           deviceLabel: pick.device.label,
-          roman:    romanPath(root, q, pick.sequence, keyTonic) || pick.device.roman,
+          // A modulating device is ARGUING for a different key, so label its
+          // path in the key it lands in. Measured in the old key, "hear this
+          // Gm7 as a ii" comes out as "i7 → IV7 → ♭VIImaj7", which describes
+          // the notes correctly and the idea not at all.
+          roman:    romanPath(root, q, pick.sequence,
+                              pick.modulation ? pick.modulation.tonicPc : keyTonic)
+                    || pick.device.roman,
           // Non-null when playing this device moves the tonal centre; compose
           // mode adopts it as the new key.
           modulatesTo: pick.modulation,

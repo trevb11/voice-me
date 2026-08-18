@@ -770,6 +770,43 @@ check('REGRESSION: the ii chord of a declared key is offered its V', () => {
   return bad;
 });
 
+// Inference reads a lone minor 7th as i, because scoring one chord rewards it
+// for being its own tonic. In jazz it is far more often a ii. Rather than guess,
+// the ii reading is offered as a branch — so this must hold with NO key set.
+check('REGRESSION: a lone minor chord offers its ii–V even on auto', () => {
+  const bad = [];
+  for (let root = 0; root < 12; root++) {
+    for (const q of ['m7', 'm9']) {
+      const notes = H.voice(root, q, { spice: 1, shape: 'closed' });
+      const { branches } = H.suggest(notes, root, q, [], 1, 'closed', null);
+      const vRoot = (root + 5) % 12;          // if this is ii, its V is a 4th up
+      const found = branches.some(b => b.sequence.some(
+        s => s.rootPC === vRoot && H.QUALITIES[s.quality].family === 'dominant'));
+      if (!found) {
+        bad.push(`${NM[root]}${q} on auto: no ${NM[vRoot]}7 — ` + branches.map(b => b.name).join(' | '));
+      }
+    }
+  }
+  return bad;
+});
+
+check('a reinterpretation branch is labelled in the key it argues for', () => {
+  const bad = [];
+  for (let root = 0; root < 12; root++) {
+    const notes = H.voice(root, 'm7', { spice: 1, shape: 'closed' });
+    const { branches } = H.suggest(notes, root, 'm7', [], 1, 'closed', null);
+    for (const b of branches.filter(x => x.device === 'treat-as-ii')) {
+      if (!/^ii/.test(b.roman)) {
+        bad.push(`${NM[root]}m7: "hear it as a two" labelled "${b.roman}" — should start ii`);
+      }
+      if (!b.modulatesTo || b.modulatesTo.tonicPc !== (root + 10) % 12) {
+        bad.push(`${NM[root]}m7: should declare ${NM[(root + 10) % 12]} major as home`);
+      }
+    }
+  }
+  return bad;
+});
+
 check('the V chord of a declared key is offered its I', () => {
   const bad = [];
   for (let tonic = 0; tonic < 12; tonic++) {

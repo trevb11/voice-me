@@ -5,8 +5,7 @@
  * Modes:
  *   • Live       — track and render currently-held MIDI notes (debounced)
  *   • Voicing    — show a single voicing (persistent, from library selection)
- *   • Progression — show all chords in a progression side-by-side with barlines,
- *                   chord name labels, and straight arrows for voice leading
+ *   • Progression — show all chords side-by-side with barlines and chord names
  *
  * Notes:
  *   • Split between treble/bass staves at MIDI 60 (middle C)
@@ -22,8 +21,8 @@ let voicingNotes    = null;     // single chord to show in voicing mode
 let progressionData = null;     // { chords: [{notes, name, useSharp}], currentIdx }
 let debounceTimer   = null;
 
-// Note-position storage for arrow drawing between chords in progression mode
-let notePositions   = [];       // parallel to progressionData.chords — each is { chordIdx, notesByMidi: Map<midi, {x, y}> }
+// Where each notehead ended up, so pulseChord() can ring the right ones.
+let notePositions   = [];       // parallel to progressionData.chords — { chordIdx, notesByMidi: Map<midi, {x, y}> }
 let chordLabelPositions = [];   // parallel: { chordIdx, x, y, midX }
 
 // ── MIDI → VexFlow note conversion ─────────────────────────────────────────
@@ -169,7 +168,7 @@ function styleNote(staveNote, color) {
   });
 }
 
-// ── Progression: multi-chord staff with barlines + labels + arrows ────────
+// ── Progression: multi-chord staff with barlines + chord labels ───────────
 
 function drawProgression(chords, currentIdx) {
   if (!chords || chords.length === 0) return drawEmpty();
@@ -342,8 +341,11 @@ function drawProgression(chords, currentIdx) {
     });
   });
 
-  // ── Draw voice-leading arrows ──────────────────────────────────────
-  drawVoiceLeadingArrows(chords, colors.ink);
+  // No voice-leading arrows on the staff. They crossed each other, crossed the
+  // barlines, and turned a readable lead sheet into a diagram. The keyboard
+  // already shows which voice went where, at the moment it matters — while you
+  // are playing it — and it does so from the real voice-leading mapping rather
+  // than by guessing pairs from pitch distance. Notation stays notation.
 }
 
 function buildRest(clef, duration) {
@@ -418,119 +420,6 @@ function getNoteHeadPos(staveNote, keyIdx, boundingBox) {
     return { x: boundingBox.x + boundingBox.w / 2, y: boundingBox.y + boundingBox.h / 2 };
   }
   return null;
-}
-
-// ── Voice-leading arrows ───────────────────────────────────────────────────
-
-function drawVoiceLeadingArrows(chords, color) {
-  // For each pair of adjacent chords, match moving voices and draw arrows.
-  const container = getContainer();
-  const svg = container.querySelector('svg');
-  if (!svg) return;
-
-  // Ensure arrowhead marker exists in defs
-  ensureArrowMarker(svg, color);
-
-  for (let i = 0; i < chords.length - 1; i++) {
-    const from = chords[i].notes;
-    const to   = chords[i + 1].notes;
-
-    const fromSet = new Set(from);
-    const toSet   = new Set(to);
-
-    const leaving  = from.filter(n => !toSet.has(n));
-    const arriving = to.filter(n => !fromSet.has(n));
-
-    if (leaving.length === 0 || arriving.length === 0) continue;
-
-    // Match each leaving voice to nearest arriving voice by pitch distance
-    const arrivingCopy = [...arriving];
-    const pairs = [];
-
-    leaving.sort((a, b) => a - b).forEach(from => {
-      let bestIdx = -1;
-      let bestDist = Infinity;
-      arrivingCopy.forEach((to, idx) => {
-        if (to === null) return;
-        const dist = Math.abs(from - to);
-        if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
-      });
-      if (bestIdx >= 0) {
-        pairs.push({ from, to: arrivingCopy[bestIdx] });
-        arrivingCopy[bestIdx] = null;
-      }
-    });
-
-    // Draw a straight arrow from the fromNote position to the toNote position
-    const fromPositions = notePositions.find(p => p.chordIdx === i);
-    const toPositions   = notePositions.find(p => p.chordIdx === i + 1);
-    if (!fromPositions || !toPositions) continue;
-
-    pairs.forEach(pair => {
-      const fromPos = fromPositions.notesByMidi.get(pair.from);
-      const toPos   = toPositions.notesByMidi.get(pair.to);
-      if (!fromPos || !toPos) return;
-      drawArrow(svg, fromPos, toPos, color);
-    });
-  }
-}
-
-function ensureArrowMarker(svg, color) {
-  const NS = 'http://www.w3.org/2000/svg';
-  let defs = svg.querySelector('defs');
-  if (!defs) {
-    defs = document.createElementNS(NS, 'defs');
-    svg.insertBefore(defs, svg.firstChild);
-  }
-
-  // Remove any existing markers we added (color may have changed with theme)
-  defs.querySelectorAll('marker.voiceme-arrowhead').forEach(m => m.remove());
-
-  const marker = document.createElementNS(NS, 'marker');
-  marker.setAttribute('id',           'voiceme-arrowhead');
-  marker.setAttribute('class',        'voiceme-arrowhead');
-  marker.setAttribute('markerWidth',  '7');
-  marker.setAttribute('markerHeight', '7');
-  marker.setAttribute('refX',         '6');
-  marker.setAttribute('refY',         '3.5');
-  marker.setAttribute('orient',       'auto');
-  const poly = document.createElementNS(NS, 'path');
-  poly.setAttribute('d',    'M 0 0 L 7 3.5 L 0 7 z');
-  poly.setAttribute('fill', color);
-  marker.appendChild(poly);
-  defs.appendChild(marker);
-}
-
-function drawArrow(svg, fromPos, toPos, color) {
-  const NS = 'http://www.w3.org/2000/svg';
-
-  // Nudge start/end so arrows don't overlap noteheads
-  const dx  = toPos.x - fromPos.x;
-  const dy  = toPos.y - fromPos.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 4) return;
-
-  const padStart = 10;   // clear the leaving notehead
-  const padEnd   = 12;   // clear the arriving notehead for arrowhead
-  const ux       = dx / len;
-  const uy       = dy / len;
-
-  const x1 = fromPos.x + ux * padStart;
-  const y1 = fromPos.y + uy * padStart;
-  const x2 = toPos.x   - ux * padEnd;
-  const y2 = toPos.y   - uy * padEnd;
-
-  const line = document.createElementNS(NS, 'line');
-  line.setAttribute('x1',           x1);
-  line.setAttribute('y1',           y1);
-  line.setAttribute('x2',           x2);
-  line.setAttribute('y2',           y2);
-  line.setAttribute('stroke',       color);
-  line.setAttribute('stroke-width', '1.2');
-  line.setAttribute('marker-end',   'url(#voiceme-arrowhead)');
-  line.setAttribute('opacity',      '0.85');
-  line.setAttribute('class',        'voiceme-vl-arrow');
-  svg.appendChild(line);
 }
 
 // ── SVG text helper ────────────────────────────────────────────────────────

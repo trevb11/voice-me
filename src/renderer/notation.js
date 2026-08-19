@@ -184,12 +184,27 @@ function drawProgression(chords, currentIdx) {
   const measureMap  = computeMeasureMap(durations);
   const measures    = measureMap.count;
 
-  // Layout: reserve space for chord labels above the staves
-  const labelHeight   = 26;
-  const trebleY       = 10 + labelHeight;
-  const bassY         = h - 110;
+  // ── Vertical layout ──
+  // A grand staff is a FIXED shape: two five-line staves a set distance apart,
+  // joined by a brace. Pinning the treble to the top and the bass to the
+  // bottom of the panel stretched that gap to whatever height the container
+  // happened to be — 234px on a 360px panel, an empty corridor down the middle
+  // of the page. Size the pair, then centre it.
+  const labelHeight  = 26;
+  const STAVE_HEIGHT = 40;   // five lines at VexFlow's 10px spacing
+  const TOP_RESERVE  = labelHeight + 8;   // chord names sit above the treble
+  const BOT_RESERVE  = 34;   // ledger lines hang below the bass staff
+
+  // The gap closes up on a short panel rather than letting the bass staff and
+  // its ledger lines run off the bottom.
+  const avail = Math.max(120, h - TOP_RESERVE - BOT_RESERVE);
+  const gap   = Math.max(56, Math.min(92, avail - STAVE_HEIGHT * 2));
+
+  const trebleY = TOP_RESERVE + Math.max(0, Math.round((avail - (STAVE_HEIGHT * 2 + gap)) / 2));
+  const bassY   = trebleY + STAVE_HEIGHT + gap;
+
   const staffLeft     = 26;   // room for the grand-staff brace (VexFlow draws it left of the stave)
-  const staffRight    = w - 10;
+  const staffRight    = w - 18;   // the final barline needs air, or it reads as cut off
   const totalWidth    = staffRight - staffLeft;
   const clefWidth     = 40;
   const usableWidth   = totalWidth - clefWidth;
@@ -293,11 +308,23 @@ function drawProgression(chords, currentIdx) {
     bassVoice.setStrict(false);
     bassVoice.addTickables(bassTickables);
 
-    new VF.Formatter().joinVoices([trebleVoice, bassVoice]).format([trebleVoice, bassVoice], stave.width - 40);
+    // Format to the stave's REAL note area, not to `width - 40`. That guess
+    // ignores the clef, so the first measure had less room than it claimed and
+    // every other measure had more — noteheads drifted to different offsets
+    // from bar to bar, and accidentals shunted them further out of line.
+    const noteArea = Math.max(
+      40,
+      stave.treble.getNoteEndX() - stave.treble.getNoteStartX() - 12
+    );
+    new VF.Formatter().joinVoices([trebleVoice, bassVoice]).format([trebleVoice, bassVoice], noteArea);
 
     trebleTickables.forEach(t => t.setContext(ctx));
     bassTickables.forEach(t => t.setContext(ctx));
 
+    // Do NOT try to centre the chord in its bar with setXShift: it moves the
+    // noteheads but leaves the accidentals behind, so flats and sharps detach
+    // from the notes they belong to and the chord drifts over the barline.
+    // Left-aligned after the clef is both correct and what VexFlow lays out.
     trebleVoice.draw(ctx, stave.treble);
     bassVoice.draw(ctx, stave.bass);
 

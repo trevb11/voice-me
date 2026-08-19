@@ -98,6 +98,23 @@ escaped. The predecessor discarded the whole mapping when it judged a result
 "muddy" and returned a single pair, which is why compose mode used to light one
 key for a four-note chord.
 
+### Tensions and the bass
+
+A 9th a whole step above the root reads as clutter no matter how well spaced
+the rest of the chord is — `Db3 Eb3 F3 B3` has no gap smaller than a whole
+tone and still sounds wrong, because the ear hears the 9th beating against the
+root instead of colouring the chord. `deMud()` cannot catch this; it checks
+intervals, and this is about function. `NINTH_FLOOR` lifts a 9th to at least a
+9th above the bass.
+
+Scoped deliberately, and the scope is the whole point:
+
+- **The 9th family only** (`9th`, `♭9`, `♯9`). A 13th a major 6th above the
+  root is idiomatic — `C3 E3 A3 Bb3` is a textbook C13 — and 11ths sit close
+  happily too. Applying the floor to every tension breaks good voicings.
+- **Non-dense shapes only.** `cluster` sets `dense: true` and is exempt: a
+  cluster may absolutely put the root next to the 9th, which is what it is for.
+
 ### Key lighting
 
 `fingering(prevNotes, targetNotes)` derives `{hold, press, lift}` **by set
@@ -203,7 +220,7 @@ carries the motion**:
 
 ## Testing
 
-`npm test` runs 50 invariants over every root × quality × spice × shape, plus
+`npm test` runs 55 invariants over every root × quality × spice × shape, plus
 realistic human voicings (close, shell, rootless) as voice-leading seeds. No
 framework.
 

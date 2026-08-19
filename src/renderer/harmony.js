@@ -317,6 +317,43 @@
 
   const ALTERED_9_ROLES = new Set(['♭9', '♯9']);
 
+  // The 9th family specifically — the tensions that grind against the root.
+  //
+  // Spacing rules alone do not catch this. A 9th a whole step above the root
+  // passes any "is this interval too tight" test — Db3 Eb3 F3 B3 has no gap
+  // smaller than a whole tone — and still sounds cluttered, because the ear
+  // hears the 9th beating against the root rather than colouring the chord.
+  // Put it an octave up (Db3 F3 B3 Eb4) and the same five notes open out.
+  //
+  // 11ths and 13ths are deliberately NOT here. A 13th a major 6th above the
+  // root is idiomatic, not muddy: C3 E3 A3 Bb3 is a textbook C13, and forcing
+  // its 13th above a 9th would break the voicing rather than fix it.
+  const NINTH_ROLES  = new Set(['9th', '♭9', '♯9']);
+  const NINTH_FLOOR  = 14;   // a 9th above the bass, not a 2nd
+
+  /**
+   * Lift 9ths clear of the bass. Returns true if anything moved.
+   *
+   * Skipped for shapes that declare themselves dense: a cluster's whole point
+   * is packing tones together, so spreading its 9th an octave up would turn it
+   * into a different texture.
+   */
+  function liftNinths(notes, roleByPc, shape) {
+    if ((SHAPES[shape] || {}).dense) return notes;
+    const out  = [...notes].sort((a, b) => a - b);
+    const bass = out[0];
+    const used = new Set(out);
+    for (let i = 1; i < out.length; i++) {
+      if (!NINTH_ROLES.has(roleByPc.get(pc(out[i])))) continue;
+      let m = out[i];
+      while (m - bass < NINTH_FLOOR && m + 12 <= KEY_HI && !used.has(m + 12)) {
+        used.delete(m); m += 12; used.add(m);
+      }
+      out[i] = m;
+    }
+    return out.sort((a, b) => a - b);
+  }
+
   /**
    * The tones of a chord at a given spice level.
    * Returns [{ pc, iv, role, rank }] — pitch classes with their function.
@@ -378,7 +415,7 @@
     minimal: { voices: 3, bass: [45, 62], upper: [52, 76], gap: [3, 4],  invertBass: false, double: false },
     closed:  { voices: 4, bass: [40, 60], upper: [52, 79], gap: [1, 3],  invertBass: false, double: true  },
     open:    { voices: 5, bass: [36, 55], upper: [57, 84], gap: [3, 7],  invertBass: false, double: true  },
-    cluster: { voices: 5, bass: [50, 64], upper: [55, 84], gap: [1, 2],  invertBass: true,  double: false },
+    cluster: { voices: 5, bass: [50, 64], upper: [55, 84], gap: [1, 2],  invertBass: true,  double: false, dense: true },
   };
 
   const clampKey = m => Math.min(KEY_HI, Math.max(KEY_LO, m));
@@ -515,7 +552,9 @@
       }
     }
 
-    return deMud(notes, minGap);
+    const roleByPc = new Map();
+    tones.forEach(t => { if (!roleByPc.has(t.pc)) roleByPc.set(t.pc, t.role); });
+    return liftNinths(deMud(notes, minGap), roleByPc, shape);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -693,6 +732,30 @@
     for (const v of voices) {
       while (v.to <= bassMidi && v.to + 12 <= KEY_HI) v.to += 12;
       if (v.kind === 'held' && v.from !== v.to) v.kind = 'moved';
+    }
+
+    // A 9th sitting a whole step above the root reads as clutter however well
+    // spaced the rest of the chord is, so lift it clear of the bass even
+    // though no spacing rule objects. Dense shapes are exempt — a cluster may
+    // absolutely put the root next to the 9th; that is what it is for.
+    const roleByPc = new Map();
+    tones.forEach(t => { if (!roleByPc.has(t.pc)) roleByPc.set(t.pc, t.role); });
+
+    if (!sh.dense) {
+      const taken = new Set(voices.map(v => v.to));
+      for (const v of voices) {
+        if (!NINTH_ROLES.has(roleByPc.get(pc(v.to)))) continue;
+        let m = v.to;
+        while (m - bassMidi < NINTH_FLOOR && m + 12 <= KEY_HI && !taken.has(m + 12)) {
+          taken.delete(m); m += 12; taken.add(m);
+        }
+        if (m !== v.to) {
+          v.to = m;
+          // A voice that had to move is REPORTED as moved, never as a held
+          // voice that quietly changed pitch.
+          if (v.kind === 'held') v.kind = 'moved';
+        }
+      }
     }
 
     // ── 4. The bass is a voice too — the old engine forgot this, which is why

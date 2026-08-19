@@ -194,6 +194,71 @@ check('no muddy low intervals (< minor 3rd below C3)', () => {
   return bad;
 });
 
+// Spacing rules alone do not catch this. A 9th a whole step above the root
+// passes every "is this interval too tight" test — Db3 Eb3 F3 B3 has no gap
+// smaller than a whole tone — and still sounds cluttered, because the ear
+// hears the 9th beating against the root instead of colouring the chord.
+//
+// Scoped deliberately:
+//   • the 9th FAMILY only. A 13th a major 6th above the root is idiomatic —
+//     C3 E3 A3 Bb3 is a textbook C13 and must be left alone.
+//   • non-DENSE shapes only. A cluster may put the root next to the 9th; that
+//     is what a cluster is for.
+const NINTHS = new Set(['9th', '♭9', '♯9']);
+
+function ninthsCrowdingTheBass(notes, root, quality, spice) {
+  const bass = Math.min(...notes);
+  const roleByPc = new Map();
+  H.colour(root, quality, spice).forEach(t => { if (!roleByPc.has(t.pc)) roleByPc.set(t.pc, t.role); });
+  return notes.filter(n => NINTHS.has(roleByPc.get(((n % 12) + 12) % 12)) && n - bass < 14);
+}
+
+const SPREAD_SHAPES = SHAPES.filter(sh => !H.SHAPES[sh].dense);
+
+check('REGRESSION: a 9th sits clear of the bass in spread voicings, when led', () => {
+  const bad = [];
+  for (const { root, notes } of humanVoicings().slice(0, 400)) {
+    for (const q of ['9', '13', '7b9', '7alt', 'maj9', 'm9', 'm11', '6/9']) {
+      for (const sh of SPREAD_SHAPES) {
+        const r = H.lead(notes, root, q, { spice: 2, shape: sh });
+        for (const n of ninthsCrowdingTheBass(r.notes, root, q, 2)) {
+          bad.push(`${NM[root]}${q} ${sh}: ${nm(n)} only ${n - Math.min(...r.notes)} above the bass — ` +
+                   r.notes.map(nm).join(' '));
+        }
+      }
+    }
+  }
+  return bad;
+});
+
+check('a 9th sits clear of the bass in spread voicings, standalone', () => {
+  const bad = [];
+  for (const root of ROOTS) for (const q of QUALS) for (const s of SPICES) for (const sh of SPREAD_SHAPES) {
+    const notes = H.voice(root, q, { spice: s, shape: sh });
+    for (const n of ninthsCrowdingTheBass(notes, root, q, s)) {
+      bad.push(`${NM[root]}${q} ${sh}@${s}: ${nm(n)} too close to the bass — ${notes.map(nm).join(' ')}`);
+    }
+  }
+  return bad;
+});
+
+// The rule must not overreach: these are good voicings and must survive it.
+check('13ths and clusters are left alone', () => {
+  const bad = [];
+  for (const root of ROOTS) {
+    const thirteenth = H.voice(root, '13', { spice: 1, shape: 'closed' });
+    const bass = Math.min(...thirteenth);
+    const roleByPc = new Map();
+    H.colour(root, '13', 1).forEach(t => { if (!roleByPc.has(t.pc)) roleByPc.set(t.pc, t.role); });
+    const has13 = thirteenth.some(n => roleByPc.get(((n % 12) + 12) % 12) === '13th');
+    if (!has13) bad.push(`${NM[root]}13 closed: lost its 13th`);
+    if (Math.max(...thirteenth) - bass > 26) {
+      bad.push(`${NM[root]}13 closed: spread to ${Math.max(...thirteenth) - bass} semitones — rule overreached`);
+    }
+  }
+  return bad;
+});
+
 check('shape controls density: minimal ≤ closed ≤ open/cluster', () => {
   const bad = [];
   for (const root of ROOTS) for (const q of QUALS) for (const s of SPICES) {

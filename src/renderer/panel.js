@@ -362,43 +362,47 @@ function audioContext() {
 }
 
 /**
- * The "you got it" sound.
+ * The "you got it" sound — a soft pad swell.
  *
- * Warm rather than bell-like. Three things make a chime sound like a chime:
- * high pure sines, a long ringing decay, and an arpeggiated sparkle. This is
- * the opposite of each — low triangles rounded off with a lowpass, a soft
- * attack, and a short decay, all three partials arriving almost together so it
- * blooms instead of twinkling.
+ * Deliberately not a chime. Three things make a chime read as one: high pure
+ * sines, a long ringing decay, and an arpeggiated sparkle on the way up. This
+ * has none of them. It blooms over 60ms with no attack transient at all, so it
+ * arrives as a glow rather than an event, and a lowpass closes from 1600Hz to
+ * 700Hz across the tail to take any glassiness off the top.
  *
- * Voiced as an open fifth plus its octave, with NO third. It sounds right
- * after whatever chord you just played, and a third would collide with half of
- * them.
+ * Voiced as an open fifth plus its octave, with NO third. It sounds
+ * immediately after whatever chord you just played, and a third would collide
+ * with half of them.
+ *
+ * The register matters as much as the timbre. An earlier version sat on a G3
+ * fundamental at 196Hz and was almost inaudible on laptop speakers, which roll
+ * off steeply below ~300Hz. Nothing here goes below F4.
  */
+const CONFIRM_PARTIALS = [
+  { freq: 349.23, type: 'triangle', peak: 0.17, delay: 0.000, decay: 1.00 },  // F4
+  { freq: 523.25, type: 'triangle', peak: 0.11, delay: 0.030, decay: 0.90 },  // C5
+  { freq: 698.46, type: 'sine',     peak: 0.05, delay: 0.050, decay: 0.70 },  // F5
+];
+const CONFIRM_ATTACK = 0.06;   // the swell; shorter than this and it clicks
+
 function playChime() {
   try {
     const ctx = audioContext();
     if (!ctx) return;
     const t0 = ctx.currentTime;
 
-    // Rounds off the top so nothing glassy survives.
     const tone = ctx.createBiquadFilter();
     tone.type = 'lowpass';
-    tone.frequency.setValueAtTime(1300, t0);
-    tone.frequency.exponentialRampToValueAtTime(600, t0 + 0.7);
     tone.Q.value = 0.6;
+    tone.frequency.setValueAtTime(1600, t0);
+    tone.frequency.exponentialRampToValueAtTime(700, t0 + 0.9);
 
     const out = ctx.createGain();
     out.gain.value = 1;
     tone.connect(out);
     out.connect(ctx.destination);
 
-    const partials = [
-      { freq: 196.00, type: 'triangle', peak: 0.16, delay: 0.000, decay: 0.95 },  // G3
-      { freq: 293.66, type: 'triangle', peak: 0.11, delay: 0.010, decay: 0.85 },  // D4
-      { freq: 392.00, type: 'sine',     peak: 0.07, delay: 0.020, decay: 0.70 },  // G4
-    ];
-
-    partials.forEach(({ freq, type, peak, delay, decay }) => {
+    CONFIRM_PARTIALS.forEach(({ freq, type, peak, delay, decay }) => {
       const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = type;
@@ -408,8 +412,7 @@ function playChime() {
 
       const start = t0 + delay;
       gain.gain.setValueAtTime(0.0001, start);
-      // A gentle swell, not a click — the attack is most of the warmth.
-      gain.gain.linearRampToValueAtTime(peak, start + 0.035);
+      gain.gain.linearRampToValueAtTime(peak, start + CONFIRM_ATTACK);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + decay);
 
       osc.start(start);

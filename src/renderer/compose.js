@@ -27,7 +27,11 @@ const compose = {
   declaredKey:  null,   // { tonicPc, mode } when the player has named one; null = auto
   prevHeld:     new Set(),
   spice:        1,      // 0 basic · 1 colourful · 2 complex — WHICH notes
-  shape:        'closed', // minimal · closed · open · cluster — HOW they spread
+  // Voicing texture. The engine supports minimal/closed/open/cluster and the
+  // dial for it was removed — it changed how a chord spreads across the
+  // registers, which was not legible enough on screen to earn the space.
+  // Kept as a constant so the capability is one line away if it comes back.
+  shape:        'closed',
   groupSeq:     0,      // increments per committed device, so Backspace can pop one whole
 };
 
@@ -672,29 +676,6 @@ function initDials() {
       btn.addEventListener('click', () => {
         compose.spice = parseInt(btn.dataset.spice, 10);
         spiceEl.querySelectorAll('.spice-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        regenerate();
-      });
-    });
-  }
-
-  // Shape is the other half of the pair: spice picks WHICH notes, shape picks
-  // HOW they spread. They are independent, so both need a control.
-  const shapeEl = document.getElementById('shape-dial');
-  if (shapeEl) {
-    const shapes = [
-      { v: 'minimal', label: 'Minimal', title: 'Root and guide tones only' },
-      { v: 'closed',  label: 'Closed',  title: 'Tight stack, textbook' },
-      { v: 'open',    label: 'Open',    title: 'Wide spacing, bass well below' },
-      { v: 'cluster', label: 'Cluster', title: 'Dense, chord tone in the bass' },
-    ];
-    shapeEl.innerHTML = shapes.map(s =>
-      `<button class="spice-btn ${s.v === compose.shape ? 'active' : ''}" data-shape="${s.v}" title="${s.title}">${s.label}</button>`
-    ).join('');
-    shapeEl.querySelectorAll('.spice-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        compose.shape = btn.dataset.shape;
-        shapeEl.querySelectorAll('.spice-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         regenerate();
       });

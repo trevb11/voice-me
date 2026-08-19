@@ -168,31 +168,10 @@ html, body {
   flex-shrink: 0;
   font-family: var(--font-ui);
 }
+/* Just the letter — the diagonal stroke that used to cross it is gone. */
 .logo-v {
   color: var(--text-primary);
   font-weight: 400;
-  position: relative;
-  display: inline-block;
-}
-.logo-v::before {
-  content: '';
-  position: absolute;
-  left: -6px;
-  top: 50%;
-  width: 26px;
-  height: 1px;
-  background: var(--text-primary);
-  transform: rotate(-20deg);
-  transform-origin: left center;
-}
-.logo-v::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  top: 45%;
-  width: 4px;
-  height: 1.5px;
-  background: var(--bg);
 }
 
 /* ── Piano container ────────────────────────────────────────────────────── */

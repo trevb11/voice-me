@@ -328,8 +328,21 @@
   // 11ths and 13ths are deliberately NOT here. A 13th a major 6th above the
   // root is idiomatic, not muddy: C3 E3 A3 Bb3 is a textbook C13, and forcing
   // its 13th above a 9th would break the voicing rather than fix it.
-  const NINTH_ROLES  = new Set(['9th', '♭9', '♯9']);
-  const NINTH_FLOOR  = 14;   // a 9th above the bass, not a 2nd
+  const NINTH_ROLES = new Set(['9th', '♭9', '♯9']);
+
+  // Measured against the ROOT, not the bass. The complaint is the 9th grinding
+  // against the root, so that is what to measure — and measuring from the bass
+  // gets it wrong in both directions. A ♭9 sits a MINOR 9th above the root
+  // (13 semitones), so a floor of 14 above the bass threw F7♭9's G♭ up an
+  // octave rather than letting it fall a half step from the G above it,
+  // wrecking the one voice-leading move that chord exists for.
+  const NINTH_CROWDS = 3;    // within a minor 3rd ABOVE the root is too close
+
+  // ...but never at the cost of a chord no one can reach. When the root already
+  // sits high, lifting its 9th another octave spreads the voicing past three
+  // octaves. A slightly crowded chord beats an unplayable one, and up in that
+  // register the crowding is far less muddy anyway.
+  const PLAYABLE_SPAN = 30;
 
   /**
    * Lift 9ths clear of the bass. Returns true if anything moved.
@@ -338,15 +351,34 @@
    * is packing tones together, so spreading its 9th an octave up would turn it
    * into a different texture.
    */
-  function liftNinths(notes, roleByPc, shape) {
+  /** Span of `notes` if index `i` were moved to `candidate`. */
+  function spanWith(notes, i, candidate) {
+    let lo = candidate, hi = candidate;
+    notes.forEach((n, j) => {
+      if (j === i) return;
+      if (n < lo) lo = n;
+      if (n > hi) hi = n;
+    });
+    return hi - lo;
+  }
+
+  function crowdsTheRoot(midi, rootMidi) {
+    if (rootMidi == null) return false;      // rootless: nothing to grind against
+    const above = midi - rootMidi;
+    return above > 0 && above <= NINTH_CROWDS;
+  }
+
+  function liftNinths(notes, roleByPc, shape, rootPC) {
     if ((SHAPES[shape] || {}).dense) return notes;
-    const out  = [...notes].sort((a, b) => a - b);
-    const bass = out[0];
+    const out = [...notes].sort((a, b) => a - b);
+    const rootMidi = out.find(n => pc(n) === pc(rootPC));
+    if (rootMidi == null) return out;
     const used = new Set(out);
-    for (let i = 1; i < out.length; i++) {
+    for (let i = 0; i < out.length; i++) {
       if (!NINTH_ROLES.has(roleByPc.get(pc(out[i])))) continue;
       let m = out[i];
-      while (m - bass < NINTH_FLOOR && m + 12 <= KEY_HI && !used.has(m + 12)) {
+      while (crowdsTheRoot(m, rootMidi) && m + 12 <= KEY_HI && !used.has(m + 12)
+             && spanWith(out, i, m + 12) <= PLAYABLE_SPAN) {
         used.delete(m); m += 12; used.add(m);
       }
       out[i] = m;
@@ -459,15 +491,27 @@
   // Choose which tones sound, and in what order, for a shape's voice budget.
   // Guide tones first, then colour, then root, then the 5th — so trimming
   // sheds the 5th before it sheds a 9th, which is how pianists actually voice.
-  function selectTones(tones, shape) {
+  /**
+   * Which tones sound, and how many.
+   *
+   * `wantVoices` is how many notes the player is actually holding, and it wins
+   * over the shape's nominal count. Play a five-note chord and you should get
+   * five notes back: imposing the shape's four drops a tone from the target,
+   * which means a voice that had somewhere perfectly good to go gets released
+   * instead. Db9 → G♭maj7 is the case — the E♭ wants to fall a whole step to
+   * D♭ and become the 5th, but with the 5th trimmed out of the target there is
+   * nothing for it to move to, so it just disappears.
+   */
+  function selectTones(tones, shape, wantVoices) {
     const sh = SHAPES[shape] || SHAPES.closed;
     const pool = [...tones];
 
-    // A shape's voice count is a target, not a cap. Some chords need more to
-    // exist at all — m7♭5 and dim7 are four essential tones, so "minimal"
-    // stretches rather than emitting something that is not the chord.
+    // A voice count is a target, not a cap. Some chords need more to exist at
+    // all — m7♭5 and dim7 are four essential tones, so "minimal" stretches
+    // rather than emitting something that is not the chord.
     const essential = pool.filter(t => t.rank === 0).length + 1;   // + the root
-    const budget    = Math.min(6, Math.max(sh.voices, essential));
+    const asked     = wantVoices || sh.voices;
+    const budget    = Math.min(6, Math.max(asked, essential));
     if (pool.length <= budget) return pool;
 
     // The root is never what gets dropped to save space.
@@ -554,7 +598,7 @@
 
     const roleByPc = new Map();
     tones.forEach(t => { if (!roleByPc.has(t.pc)) roleByPc.set(t.pc, t.role); });
-    return liftNinths(deMud(notes, minGap), roleByPc, shape);
+    return liftNinths(deMud(notes, minGap), roleByPc, shape, root);
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -682,7 +726,9 @@
       };
     }
 
-    const tones     = selectTones(colour(root, quality, o.spice), shape);
+    // Match what the player is holding, so no voice is stranded.
+    const tones = selectTones(colour(root, quality, o.spice), shape,
+                              prevNotes && prevNotes.length ? prevNotes.length : null);
     const targetPCs = tones.map(t => t.pc);
 
     // ── 1. Bass pitch class — overridden, functional, or the rootless choice ──
@@ -742,11 +788,15 @@
     tones.forEach(t => { if (!roleByPc.has(t.pc)) roleByPc.set(t.pc, t.role); });
 
     if (!sh.dense) {
-      const taken = new Set(voices.map(v => v.to));
+      const all = [bassMidi, ...voices.map(v => v.to)];
+      const rootMidi = all.sort((a, b) => a - b).find(n => pc(n) === root);
+      const taken = new Set(all);
       for (const v of voices) {
         if (!NINTH_ROLES.has(roleByPc.get(pc(v.to)))) continue;
+        const others = [bassMidi, ...voices.filter(o => o !== v).map(o => o.to)];
         let m = v.to;
-        while (m - bassMidi < NINTH_FLOOR && m + 12 <= KEY_HI && !taken.has(m + 12)) {
+        while (crowdsTheRoot(m, rootMidi) && m + 12 <= KEY_HI && !taken.has(m + 12)
+               && spanWith(others, -1, m + 12) <= PLAYABLE_SPAN) {
           taken.delete(m); m += 12; taken.add(m);
         }
         if (m !== v.to) {

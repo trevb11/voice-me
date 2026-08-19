@@ -206,24 +206,29 @@ check('no muddy low intervals (< minor 3rd below C3)', () => {
 //     is what a cluster is for.
 const NINTHS = new Set(['9th', '♭9', '♯9']);
 
-function ninthsCrowdingTheBass(notes, root, quality, spice) {
-  const bass = Math.min(...notes);
+// Measured against the ROOT, not the bass. A ♭9 sits a minor 9th above its
+// root, so a floor measured from the bass throws it an octave up rather than
+// letting it fall a half step from the note above — the exact move a ♭9 chord
+// exists for.
+function ninthsCrowdingTheRoot(notes, root, quality, spice) {
   const roleByPc = new Map();
   H.colour(root, quality, spice).forEach(t => { if (!roleByPc.has(t.pc)) roleByPc.set(t.pc, t.role); });
-  return notes.filter(n => NINTHS.has(roleByPc.get(((n % 12) + 12) % 12)) && n - bass < 14);
+  const rootMidi = [...notes].sort((a, b) => a - b).find(n => ((n % 12) + 12) % 12 === root % 12);
+  if (rootMidi == null) return [];
+  return notes.filter(n => NINTHS.has(roleByPc.get(((n % 12) + 12) % 12))
+                        && n - rootMidi > 0 && n - rootMidi <= 3);
 }
 
 const SPREAD_SHAPES = SHAPES.filter(sh => !H.SHAPES[sh].dense);
 
-check('REGRESSION: a 9th sits clear of the bass in spread voicings, when led', () => {
+check('REGRESSION: a 9th never sits a 2nd above the root, when led', () => {
   const bad = [];
   for (const { root, notes } of humanVoicings().slice(0, 400)) {
     for (const q of ['9', '13', '7b9', '7alt', 'maj9', 'm9', 'm11', '6/9']) {
       for (const sh of SPREAD_SHAPES) {
         const r = H.lead(notes, root, q, { spice: 2, shape: sh });
-        for (const n of ninthsCrowdingTheBass(r.notes, root, q, 2)) {
-          bad.push(`${NM[root]}${q} ${sh}: ${nm(n)} only ${n - Math.min(...r.notes)} above the bass — ` +
-                   r.notes.map(nm).join(' '));
+        for (const n of ninthsCrowdingTheRoot(r.notes, root, q, 2)) {
+          bad.push(`${NM[root]}${q} ${sh}: ${nm(n)} grinds against the root — ` + r.notes.map(nm).join(' '));
         }
       }
     }
@@ -231,18 +236,76 @@ check('REGRESSION: a 9th sits clear of the bass in spread voicings, when led', (
   return bad;
 });
 
-check('a 9th sits clear of the bass in spread voicings, standalone', () => {
+check('a 9th never sits a 2nd above the root, standalone', () => {
   const bad = [];
   for (const root of ROOTS) for (const q of QUALS) for (const s of SPICES) for (const sh of SPREAD_SHAPES) {
     const notes = H.voice(root, q, { spice: s, shape: sh });
-    for (const n of ninthsCrowdingTheBass(notes, root, q, s)) {
-      bad.push(`${NM[root]}${q} ${sh}@${s}: ${nm(n)} too close to the bass — ${notes.map(nm).join(' ')}`);
+    for (const n of ninthsCrowdingTheRoot(notes, root, q, s)) {
+      bad.push(`${NM[root]}${q} ${sh}@${s}: ${nm(n)} grinds against the root — ${notes.map(nm).join(' ')}`);
     }
   }
   return bad;
 });
 
 // The rule must not overreach: these are good voicings and must survive it.
+check('REGRESSION: a ♭9 falls a half step instead of leaping an octave', () => {
+  const bad = [];
+  for (let root = 0; root < 12; root++) {
+    // The ii chord a fifth above sounds the natural 9 of the target, a half
+    // step above its ♭9 — so the ♭9 should simply fall onto it.
+    const iiRoot = (root + 7) % 12;
+    const prev   = H.voice(iiRoot, 'm9', { spice: 1, shape: 'closed' });
+    const natural9 = (root + 2) % 12;
+    if (!prev.some(n => n % 12 === natural9)) continue;   // nothing to fall from
+
+    for (const q of ['7b9', '7b9(13)', '7alt']) {
+      const r = H.lead(prev, root, q, { spice: 2, shape: 'closed' });
+      const flat9 = (root + 1) % 12;
+      const landed = r.notes.find(n => n % 12 === flat9);
+      if (landed == null) continue;                       // quality may omit it
+      const from = prev.find(n => n % 12 === natural9);
+      if (Math.abs(landed - from) > 2) {
+        bad.push(`${NM[root]}${q}: ♭9 went ${nm(from)} → ${nm(landed)} ` +
+                 `(${landed - from} semitones) when a half step was available`);
+      }
+    }
+  }
+  return bad;
+});
+
+// You play five notes, you should get five notes back. Imposing the shape's
+// nominal count trims a tone out of the TARGET, which strands a voice that had
+// somewhere perfectly good to go: Db9 → G♭maj7 dropped the 5th, so the E♭ that
+// wanted to fall a whole step onto D♭ was simply released instead.
+check('REGRESSION: the voice count follows the player\'s hands', () => {
+  const bad = [];
+  for (const { root, notes } of humanVoicings().slice(0, 300)) {
+    for (const q of ['maj7', 'm7', '7', '9', 'm9', '13']) {
+      const r = H.lead(notes, (root + 5) % 12, q, { spice: 1, shape: 'closed' });
+      if (r.notes.length !== notes.length) {
+        bad.push(`held ${notes.length} notes, got ${r.notes.length} back ` +
+                 `(${NM[(root + 5) % 12]}${q} from ${notes.map(nm).join(' ')})`);
+      }
+    }
+  }
+  return bad;
+});
+
+check('REGRESSION: no voice is released when the counts match', () => {
+  const bad = [];
+  for (const { root, notes } of humanVoicings().slice(0, 300)) {
+    for (const q of ['maj7', 'm7', '7', '9', 'm9']) {
+      const r = H.lead(notes, (root + 5) % 12, q, { spice: 1, shape: 'closed' });
+      if (r.mapping.released.length) {
+        bad.push(`${NM[(root + 5) % 12]}${q}: released ` +
+                 r.mapping.released.map(v => nm(v.from)).join(' ') +
+                 ` from ${notes.map(nm).join(' ')}`);
+      }
+    }
+  }
+  return bad;
+});
+
 check('13ths and clusters are left alone', () => {
   const bad = [];
   for (const root of ROOTS) {

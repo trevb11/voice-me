@@ -19,7 +19,7 @@ staff, and suggests where to go next.
 
 ## Installing
 
-1. Open **Voice Me-0.1.0-arm64.dmg** and drag **Voice Me** into Applications.
+1. Open **Voice Me-0.1.0-beta.2-arm64.dmg** and drag **Voice Me** into Applications.
 
 2. **The first launch will fail.** You'll see something like:
 
@@ -81,8 +81,12 @@ Other things to try:
 
 - The **Basic / Colorful / Complex** dial changes how spicy the suggestions
   are. Basic sticks to triads and plain 7ths; Complex offers altered dominants.
-- **Minimal / Closed / Open / Cluster** changes the *voicing texture* without
-  changing the harmony — the same chord spread differently across the keyboard.
+- **Set the key** with the dropdown, and the suggestions become properly
+  functional instead of guesses. Play a Gm9 on *auto* and the app has no way to
+  know whether you mean i in G minor or ii in F, so it offers both readings.
+  Tell it F major and every branch reasons from there — `ii → V → I`, and the
+  passing chords land inside the key. Some branches modulate; playing one moves
+  the key centre for you.
 - **Hover a branch** to see other colourings of the same chord (F7, F9, F13,
   F7♭9…). They all do the same harmonic job.
 - **Click any chord** in the row under the piano to practise it again. The

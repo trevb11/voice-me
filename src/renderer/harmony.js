@@ -1021,6 +1021,76 @@
   }
 
   // ═════════════════════════════════════════════════════════════════════════
+  //  §6b  Notation spelling
+  // ═════════════════════════════════════════════════════════════════════════
+
+  const LETTERS     = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  const LETTER_SEMI = [0, 2, 4, 5, 7, 9, 11];
+
+  // How many LETTER steps each interval spans. A minor 3rd and a ♯9 are the
+  // same three semitones but different intervals — one spans two letters
+  // (G→B♭), the other one (C→D♯) — so the role decides, not the distance.
+  const STEPS_BY_ROLE = {
+    root: 0, '♭9': 1, '9th': 1, '♯9': 1, '3rd': 2, '4th': 3,
+    '11th': 3, '♯11': 3, '5th': 4, '♭13': 5, '13th': 5, '6th': 5, '7th': 6,
+  };
+  const STEPS_BY_INTERVAL = [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6];
+
+  /**
+   * Spell a chord's notes for notation: letter, accidental, octave.
+   *
+   * The naive approach picks one sharps-or-flats flag for the whole chord from
+   * its root, which gets Gm9 wrong — G is a sharp-key root, so the B♭ comes out
+   * as A♯. Spelling has to follow each note's FUNCTION: the minor 3rd of G is
+   * some kind of B, so it is B♭.
+   *
+   * Falls back to the plain enharmonic name when the correct spelling would
+   * need a double accidental — a dim7's 7th is really a ♭♭7, and nobody wants
+   * to read B♭♭ on a lead sheet.
+   */
+  function spellChord(midiNotes, rootPC, quality) {
+    const root      = pc(rootPC);
+    const useSharp  = SHARP_ROOT_PCS.has(root);
+    const rootLtr   = LETTERS.indexOf(noteName(root, useSharp)[0]);
+    const roleByPc  = new Map();
+    (QUALITIES[quality] ? colour(root, quality, 2) : []).forEach(t => {
+      if (!roleByPc.has(t.pc)) roleByPc.set(t.pc, t.role);
+    });
+
+    return (midiNotes || []).map((midi) => {
+      const iv    = pc(midi - root);
+      const steps = STEPS_BY_ROLE[roleByPc.get(pc(midi))] ?? STEPS_BY_INTERVAL[iv];
+      const ltr   = (rootLtr + steps) % 7;
+
+      // The accidental is just how far the note sits from its plain letter.
+      const raw   = pc(midi) - LETTER_SEMI[ltr];
+      let   alter = ((raw % 12) + 12) % 12;
+      if (alter > 6) alter -= 12;                                // -1 flat, +1 sharp
+
+      // The letter can belong to the neighbouring octave: C4 spelled as a
+      // sharp is B♯3, and B3 spelled as a flat is C♭4.
+      let oct = octave(midi);
+      if (raw < -6)     oct -= 1;
+      else if (raw > 6) oct += 1;
+
+      if (Math.abs(alter) > 1) {
+        // Double accidental — spell it the easy way instead. A dim7's 7th is
+        // really a ♭♭7, and nobody wants to read B♭♭ on a lead sheet.
+        const name = noteName(pc(midi), useSharp);
+        return { step: name[0].toLowerCase(),
+                 accidental: name.slice(1).replace('♯', '#').replace('♭', 'b'),
+                 octave: octave(midi), midi };
+      }
+      return {
+        step: LETTERS[ltr].toLowerCase(),
+        accidental: alter === 0 ? '' : (alter > 0 ? '#' : 'b'),
+        octave: oct,
+        midi,
+      };
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
   //  §7  Narration — the per-voice play-by-play
   // ═════════════════════════════════════════════════════════════════════════
 
@@ -2247,7 +2317,7 @@
     SHARP_ROOT_PCS, SHARP_NAMES, FLAT_NAMES,
     noteName, spell, midiName, glyphs, chordName,
     // colour + shape
-    colour, voice, variants, atSpice, tierOf,
+    colour, voice, variants, atSpice, tierOf, spellChord,
     // voice leading
     lead, fingering, nearestOctave, placeNear,
     // recognition

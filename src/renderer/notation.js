@@ -32,6 +32,37 @@ const SHARP_ACCS  = ['',  '#', '', '#', '', '', '#', '', '#', '', '#', ''];
 const FLAT_STEPS  = ['c','d','d','e','e','f','g','g','a','a','b','b'];
 const FLAT_ACCS   = ['',  'b', '', 'b', '', '', 'b', '', 'b', '', 'b', ''];
 
+/**
+ * Spell a chord's notes by FUNCTION rather than by a single sharps-or-flats
+ * flag chosen from its root.
+ *
+ * The flag approach gets Gm9 wrong: G is a sharp-key root, so the B♭ — the
+ * chord's flat 3rd — came out as A♯. Harmony.spellChord() knows each note's
+ * role and spells accordingly: the ♭9 of G is A♭, never G♯; the maj7 is F♯.
+ *
+ * Falls back to the old flag when the chord cannot be identified at all.
+ */
+function spellingFor(chord) {
+  const notes = chord.notes || [];
+  let root = chord.rootPC, quality = chord.quality;
+
+  if (root == null || !window.Harmony?.QUALITIES[quality]) {
+    const id = window.Harmony?.identify(notes);
+    if (id) { root = id.rootPC; quality = id.voiceAs; }
+  }
+
+  const map = new Map();
+  if (root != null && window.Harmony?.spellChord) {
+    window.Harmony.spellChord(notes, root, quality).forEach(sp => map.set(sp.midi, sp));
+    return map;
+  }
+  const useSharp = chord.useSharp !== undefined
+    ? chord.useSharp
+    : Piano.SHARP_ROOT_PCS.has((notes[0] || 60) % 12);
+  notes.forEach(m => map.set(m, { ...midiToVexNote(m, useSharp), midi: m }));
+  return map;
+}
+
 function midiToVexNote(midi, useSharp) {
   const pc     = midi % 12;
   const octave = Math.floor(midi / 12) - 1;
@@ -122,34 +153,41 @@ function drawSingleChord(notes, useSharp) {
   const trebleNotes = notes.filter(n => n >= 60).sort((a, b) => a - b);
   const bassNotes   = notes.filter(n => n <  60).sort((a, b) => a - b);
 
-  const trebleVexNote = buildStaveNote(trebleNotes, useSharp, 'treble', 'w');
-  const bassVexNote   = buildStaveNote(bassNotes,   useSharp, 'bass',   'w');
+  const spelling      = spellingFor({ notes, useSharp });
+  const trebleVexNote = buildStaveNote(trebleNotes, spelling, 'treble', 'w');
+  const bassVexNote   = buildStaveNote(bassNotes,   spelling, 'bass',   'w');
 
-  if (trebleVexNote) {
-    const voice = new VF.Voice({ num_beats: 4, beat_value: 4, resolution: VF.RESOLUTION });
-    voice.setStrict(false);
-    voice.addTickables([trebleVexNote]);
-    new VF.Formatter().joinVoices([voice]).format([voice], staveW - 60);
-    trebleVexNote.setContext(ctx);
-    styleNote(trebleVexNote, colors.ink);
-    voice.draw(ctx, treble);
-  }
-  if (bassVexNote) {
-    const voice = new VF.Voice({ num_beats: 4, beat_value: 4, resolution: VF.RESOLUTION });
-    voice.setStrict(false);
-    voice.addTickables([bassVexNote]);
-    new VF.Formatter().joinVoices([voice]).format([voice], staveW - 60);
-    bassVexNote.setContext(ctx);
-    styleNote(bassVexNote, colors.ink);
-    voice.draw(ctx, bass);
+  const voices = [];
+  const mk = (note) => {
+    const v = new VF.Voice({ num_beats: 4, beat_value: 4, resolution: VF.RESOLUTION });
+    v.setStrict(false);
+    v.addTickables([note]);
+    note.setContext(ctx);
+    styleNote(note, colors.ink);
+    voices.push(v);
+    return v;
+  };
+  const trebleVoice = trebleVexNote ? mk(trebleVexNote) : null;
+  const bassVoice   = bassVexNote   ? mk(bassVexNote)   : null;
+
+  if (voices.length) {
+    // Formatted together so the two staves line up, but without joinVoices —
+    // see the note in drawProgression().
+    new VF.Formatter().format(voices, staveW - 60);
+    if (trebleVoice) trebleVoice.draw(ctx, treble);
+    if (bassVoice)   bassVoice.draw(ctx, bass);
   }
 }
 
-function buildStaveNote(midiNotes, useSharp, clef, duration) {
+function buildStaveNote(midiNotes, spelling, clef, duration) {
   if (!midiNotes || midiNotes.length === 0) return null;
   const VF = Vex.Flow;
-  const parsed = midiNotes.map(m => midiToVexNote(m, useSharp));
-  const keys   = parsed.map(p => p.key);
+  const parsed = midiNotes.map(m => {
+    const sp = spelling instanceof Map ? spelling.get(m) : null;
+    if (sp) return { key: `${sp.step}/${sp.octave}`, accidental: sp.accidental };
+    return midiToVexNote(m, spelling === true);
+  });
+  const keys = parsed.map(p => p.key);
 
   const staveNote = new VF.StaveNote({ clef, keys, duration });
 
@@ -273,9 +311,7 @@ function drawProgression(chords, currentIdx) {
     chordIndicesInMeasure.forEach(chordIdx => {
       const chord    = chords[chordIdx];
       const duration = durations[chordIdx];
-      const useSharp = chord.useSharp !== undefined
-        ? chord.useSharp
-        : Piano.SHARP_ROOT_PCS.has((chord.notes[0] || 60) % 12);
+      const spelling = spellingFor(chord);
 
       const sorted     = [...chord.notes].sort((a, b) => a - b);
       const treble     = sorted.filter(n => n >= 60);
@@ -284,8 +320,8 @@ function drawProgression(chords, currentIdx) {
       const isCurrentChord   = chordIdx === currentIdx;
       const noteColor        = isCurrentChord ? colors.accent : colors.ink;
 
-      const tNote = treble.length > 0 ? buildStaveNote(treble, useSharp, 'treble', duration) : buildRest('treble', duration);
-      const bNote = bass.length   > 0 ? buildStaveNote(bass,   useSharp, 'bass',   duration) : buildRest('bass',   duration);
+      const tNote = treble.length > 0 ? buildStaveNote(treble, spelling, 'treble', duration) : buildRest('treble', duration);
+      const bNote = bass.length   > 0 ? buildStaveNote(bass,   spelling, 'bass',   duration) : buildRest('bass',   duration);
 
       styleNote(tNote, noteColor);
       styleNote(bNote, noteColor);
@@ -293,7 +329,7 @@ function drawProgression(chords, currentIdx) {
       trebleTickables.push(tNote);
       bassTickables.push(bNote);
 
-      chordMeta.push({ chordIdx, tNote, bNote, trebleMidis: treble, bassMidis: bass, useSharp });
+      chordMeta.push({ chordIdx, tNote, bNote, trebleMidis: treble, bassMidis: bass });
     });
 
     // Voices with correct beat count for this measure
@@ -311,12 +347,19 @@ function drawProgression(chords, currentIdx) {
     // Format to the stave's REAL note area, not to `width - 40`. That guess
     // ignores the clef, so the first measure had less room than it claimed and
     // every other measure had more — noteheads drifted to different offsets
-    // from bar to bar, and accidentals shunted them further out of line.
+    // from bar to bar.
     const noteArea = Math.max(
       40,
       stave.treble.getNoteEndX() - stave.treble.getNoteStartX() - 12
     );
-    new VF.Formatter().joinVoices([trebleVoice, bassVoice]).format([trebleVoice, bassVoice], noteArea);
+
+    // NOT joinVoices(). That is for voices sharing ONE stave: it merges them
+    // into a single modifier context, so the treble note gets charged for the
+    // bass's accidental column and its notehead slides 20px right of its own
+    // flat, which then reads as a stray accidental floating in the bar.
+    // format() alone still aligns the two by tick, which is all a grand staff
+    // needs.
+    new VF.Formatter().format([trebleVoice, bassVoice], noteArea);
 
     trebleTickables.forEach(t => t.setContext(ctx));
     bassTickables.forEach(t => t.setContext(ctx));

@@ -205,6 +205,25 @@ carries the motion**:
   strict *subset* of Dm11, so they swap with only the bass moving (Shorter,
   "Mahjong").
 
+## Notation
+
+`spellChord(notes, rootPC, quality)` spells each note by its **function**, not
+by a single sharps-or-flats flag chosen from the root. The flag approach gets
+Gm9 wrong — G is a sharp-key root, so the chord's flat 3rd came out as A♯. The
+minor 3rd of G is some kind of B, therefore B♭; the ♭9 of G is A♭, never G♯;
+the maj7 is F♯. Roles come from `colour()`, which is what disambiguates a ♭3
+from a ♯9 — same three semitones, different intervals.
+
+Double accidentals fall back to the plain enharmonic name. A dim7's 7th really
+is a ♭♭7, and nobody wants to read B♭♭ on a lead sheet.
+
+**Never `joinVoices()` on the grand staff.** It is for voices sharing ONE
+stave: it merges them into a single modifier context, so the treble note gets
+charged for the bass's accidental column and its notehead slides 20px right of
+its own flat — which reads as a stray accidental floating in the bar.
+`format()` alone still aligns the two by tick, which is all a grand staff
+needs.
+
 ## Conventions
 
 - Pitch classes 0–11 and MIDI numbers (middle C = 60). Quality tokens are
@@ -220,7 +239,7 @@ carries the motion**:
 
 ## Testing
 
-`npm test` runs 55 invariants over every root × quality × spice × shape, plus
+`npm test` runs 62 invariants over every root × quality × spice × shape, plus
 realistic human voicings (close, shell, rootless) as voice-leading seeds. No
 framework.
 

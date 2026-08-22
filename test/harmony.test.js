@@ -1029,6 +1029,78 @@ check('diatonic passing moves land inside the declared key', () => {
   return bad;
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  10. Notation spelling
+//      A single sharps-or-flats flag chosen from the root gets Gm9 wrong: G is
+//      a sharp-key root, so the chord's flat 3rd came out as A#. Spelling has
+//      to follow each note's FUNCTION.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const glyph = sp => sp.step.toUpperCase() + sp.accidental + sp.octave;
+const SEMI  = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+check('REGRESSION: notes are spelled by function, not a root-wide flag', () => {
+  const bad = [];
+  const cases = [
+    ['Gm9 flat-3 is Bb, never A#',  [43, 58, 62, 65, 69], 7, 'm9',      'Bb3'],
+    ['G7b9 flat-9 is Ab, never G#', [43, 59, 62, 68],     7, '7b9',     'Ab4'],
+    ['Gmaj7 maj7 is F#',            [43, 59, 62, 66],     7, 'maj7',    'F#4'],
+    ['C7#9 sharp-9 is D#',          [48, 52, 58, 63],     0, '7#9',     'D#4'],
+    ['Fmaj7#11 sharp-11 is B',      [41, 57, 59, 64],     5, 'maj7#11', 'B3' ],
+  ];
+  for (const [label, notes, root, q, expect] of cases) {
+    const spelled = H.spellChord(notes, root, q).map(glyph);
+    if (!spelled.includes(expect)) {
+      bad.push(`${label}: got ${spelled.join(' ')}, expected ${expect} among them`);
+    }
+  }
+  return bad;
+});
+
+check('the root is always spelled as itself', () => {
+  const bad = [];
+  for (const root of ROOTS) for (const q of QUALS) {
+    const notes = H.voice(root, q, { spice: 1, shape: 'closed' });
+    const rootNote = notes.find(n => ((n % 12) + 12) % 12 === root);
+    if (rootNote == null) continue;
+    const sp = H.spellChord(notes, root, q).find(x => x.midi === rootNote);
+    const semis = SEMI[sp.step.toUpperCase()]
+                + (sp.accidental === '#' ? 1 : sp.accidental === 'b' ? -1 : 0);
+    if (((semis % 12) + 12) % 12 !== root) {
+      bad.push(`${NM[root]}${q}: root spelled ${glyph(sp)}, which is not ${NM[root]}`);
+    }
+  }
+  return bad;
+});
+
+// The safety net under all of it: whatever letter and accidental we choose, it
+// has to sound the note we were given.
+check('every spelling sounds the pitch it claims', () => {
+  const bad = [];
+  for (const root of ROOTS) for (const q of QUALS) for (const sh of SHAPES) {
+    const notes = H.voice(root, q, { spice: 2, shape: sh });
+    for (const sp of H.spellChord(notes, root, q)) {
+      const alter = sp.accidental === '#' ? 1 : sp.accidental === 'b' ? -1 : 0;
+      const midi  = (sp.octave + 1) * 12 + SEMI[sp.step.toUpperCase()] + alter;
+      if (midi !== sp.midi) {
+        bad.push(`${NM[root]}${q} ${sh}: ${glyph(sp)} sounds midi ${midi}, not ${sp.midi}`);
+      }
+    }
+  }
+  return bad;
+});
+
+check('no double accidentals reach the staff', () => {
+  const bad = [];
+  for (const root of ROOTS) for (const q of QUALS) for (const s of SPICES) {
+    const notes = H.voice(root, q, { spice: s, shape: 'closed' });
+    for (const sp of H.spellChord(notes, root, q)) {
+      if (sp.accidental.length > 1) bad.push(`${NM[root]}${q}@${s}: ${glyph(sp)}`);
+    }
+  }
+  return bad;
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log('');

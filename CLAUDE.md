@@ -181,10 +181,15 @@ Slots are functional categories, and two of them guarantee bass motion:
 | Slot | Meaning |
 |---|---|
 | `cadence` | strongest functional destination |
-| `ascending` | bass climbs by step or half step |
-| `descending` | bass falls by step or half step |
+| `ascending` | bass climbs |
+| `descending` | bass falls |
 | `secondary` | secondary dominant / modulation |
-| `colour` | reharmonisation, tritone sub, non-functional sonority |
+| `colour` | diatonic colour — up a fifth, tritone sub, reharmonisation |
+| `sonority` | no roman numeral: common-tone shifts where the bass does the work |
+
+`sonority` was split out of `colour`, which was carrying two unrelated jobs and
+losing one to slot contention — whichever weighed more crowded the other out
+entirely.
 
 Each branch carries `variants[]` — the same function in other colourings (F7,
 F9, F13, F7♭9, F7alt) for the hover menu, so one function doesn't consume four
@@ -204,6 +209,21 @@ carries the motion**:
 - **`modal-oscillation`** trades chords that share nearly everything. C6/9 is a
   strict *subset* of Dm11, so they swap with only the bass moving (Shorter,
   "Mahjong").
+- **`minor-chromatic-drop`** is the same idea named: hold a m7/m9/m11 and drop
+  the bass a half step. What you land on depends entirely on the voicing —
+  `F A♭ C E♭` → Emaj7, `F A♭ B♭ E♭` → Emaj7♯11, `F C G A♭ E♭ B♭` → C7♯9(♭13)
+  over E. All idiomatic, and no engine reading the symbol "Fm7" could tell them
+  apart. It moves EVERY copy of the root, because a doubled root left behind
+  becomes a ♭9 against the new bass.
+
+### Doublings
+
+`lead()` does **not** force doubled tones to move in parallel, and that is
+deliberate. `Fmaj7 → E♭maj9` with a doubled F is the counterexample: the bass F
+moves to E♭ while the upper F stays put and becomes the 9th. Minimal motion
+finds that on its own, because holding costs nothing. Parallel motion is a
+property of specific *devices* — `minor-chromatic-drop` says so explicitly —
+not a rule for the matcher.
 
 ## Notation
 

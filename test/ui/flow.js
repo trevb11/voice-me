@@ -54,7 +54,10 @@ window.addEventListener('DOMContentLoaded', () => (async () => {
     await sleep(50);
 
     const tips = [...document.querySelectorAll('.branch-tip')];
-    ok('the tree grows five branches', tips.length === 5, `got ${tips.length}`);
+    // One branch per slot — asserted against the engine so adding a slot does
+    // not silently leave this test describing an older tree.
+    const slots = window.Harmony.SLOTS.length;
+    ok(`the tree grows one branch per slot (${slots})`, tips.length === slots, `got ${tips.length}`);
 
     click(tips[2]);
     ok('selecting a branch prompts for its first chord', /^Play /.test(status()), status());

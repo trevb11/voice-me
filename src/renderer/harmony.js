@@ -754,6 +754,20 @@
     if (bi !== -1) upperPCs.splice(bi, 1);
 
     const prevUpper = sorted.slice(1);
+
+    // Doublings are deliberately NOT forced to move in parallel here.
+    //
+    // It is tempting: two copies of a tone get matched to different targets, so
+    // a doubled note always comes apart. But keeping them together is often the
+    // wrong answer. Fmaj7 → E♭maj9 with a doubled F is the case — the bass F
+    // moves to E♭ while the upper F stays exactly where it is and becomes the
+    // 9th. Forcing both to move would throw away a common tone and the very
+    // colour the move exists for.
+    //
+    // Minimal motion already finds that: holding costs nothing, so the upper F
+    // holds. Where parallel motion IS the point, the device says so — see
+    // `minor-chromatic-drop`, whose whole gesture is the root sliding down, and
+    // which therefore moves every copy of it.
     const asg = assignUpperVoices(prevUpper, upperPCs);
 
     const voices = [
@@ -1415,11 +1429,17 @@
   // branch DISPLAYS its device's own title and roman-numeral motion; these
   // labels are only the category heading.
   const SLOTS = [
-    { slot: 'cadence',    label: 'Cadence'    },
-    { slot: 'ascending',  label: 'Rising bass' },
-    { slot: 'descending', label: 'Falling bass' },
+    { slot: 'cadence',    label: 'Cadence'            },
+    { slot: 'ascending',  label: 'Rising bass'        },
+    { slot: 'descending', label: 'Falling bass'       },
     { slot: 'secondary',  label: 'Secondary dominant' },
-    { slot: 'colour',     label: 'Colour'     },
+    { slot: 'colour',     label: 'Colour'             },
+    // Split out of `colour`, which was carrying two unrelated jobs and losing
+    // one of them to slot contention: diatonic colour moves kept crowding out
+    // the non-functional sonorities, or the other way round, depending on which
+    // happened to weigh more. These are the moves with no roman numeral —
+    // common-tone shifts where the bass does the work.
+    { slot: 'sonority',   label: 'Sonority'           },
   ];
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -1637,21 +1657,67 @@
       },
     },
     {
-      id: 'diatonic-walk-down', slot: 'descending', weight: 5,
-      label: 'Step down the scale',
-      roman: 'I → I/♮7 → previous degree',
+      // Cmaj7 → Am7 → Fmaj7, and Dm7 → B♭maj7 → Gm7. Root motion down a third
+      // keeps two common tones each time, which is why the chain sounds like
+      // one idea unfolding rather than three chords in a row.
+      id: 'descending-thirds', slot: 'descending', weight: 4,
+      label: 'Down in thirds',
+      roman: 'I → vi → IV',
       applies: c => c.keyKnown,
       chords: (c) => {
-        const down = diatonicStep(c.keyTonic, c.keyMode, c.degree, -1);
-        return [
-          { rootPC: c.root,      quality: c.quality, bassPc: pc(c.root - 1) },
-          { rootPC: down.rootPC, quality: down.quality },
-        ];
+        const a = diatonicStep(c.keyTonic, c.keyMode, c.degree, -2);
+        const b = diatonicStep(c.keyTonic, c.keyMode, c.degree, -4);
+        return [{ rootPC: a.rootPC, quality: a.quality },
+                { rootPC: b.rootPC, quality: b.quality }];
       },
       why: (c) => {
-        const down = diatonicStep(c.keyTonic, c.keyMode, c.degree, -1);
-        return `a passing bass note carries you down to ${noteName(down.rootPC, false)}, ` +
-               `the degree below in ${noteName(c.keyTonic, false)}`;
+        const a = diatonicStep(c.keyTonic, c.keyMode, c.degree, -2);
+        return `down a third to ${noteName(a.rootPC, false)}, then a third again — ` +
+               `two notes stay put each time`;
+      },
+    },
+    {
+      // Fm11 → Emaj7♯11. Hold the upper structure, drop the bass a half step,
+      // and the minor chord becomes a lydian major one.
+      //
+      // Restricted to minor SEVENTHS — m7, m9, m11 — because the move depends
+      // on the ♭7 and 11 turning into the ♯11 and maj7 of the new root. A minor
+      // triad has nothing up there to reinterpret.
+      //
+      // Reads the notes ACTUALLY HELD, not the chord symbol: Fm11 voiced
+      // F A♭ B♭ E♭ gives Emaj7♯11, while the same chord with a natural 5 gives
+      // something else. `notes` on the spec tells realizeDevice to keep this
+      // voicing rather than re-voice it — the held tones ARE the device.
+      id: 'minor-chromatic-drop', slot: 'sonority', weight: 6,
+      label: 'Minor drops a half step',
+      roman: '—',
+      // Gated by the dial rather than plainened. Every other device downgrades
+      // its chords when the dial is low; this one cannot, because re-voicing it
+      // destroys the move. The result is often a ♯11 or an altered colour, so at
+      // "basic" it simply does not fire.
+      applies: c => c.spice >= 1 && /^m(7|9|11)$/.test(c.quality) && c.prevNotes.length >= 3,
+      chords: (c) => {
+        const sorted = [...c.prevNotes].sort((a, b) => a - b);
+        if (sorted[0] - 1 < KEY_LO) return null;
+
+        // EVERY copy of the moving tone moves. Doubling the root is common —
+        // F C F A♭ E♭ A♭ — and leaving the upper F behind strands it a semitone
+        // above the new bass, turning a clean E major into an E7♭9 nobody asked
+        // for. A pianist sliding the root down slides all of it.
+        const oldRoot = pc(sorted[0]);
+        const moved = sorted.map(n => (pc(n) === oldRoot ? n - 1 : n));
+
+        const notes = [...new Set(moved)].sort((a, b) => a - b);
+        if (notes.length < 3) return null;
+        const id = identify(notes);
+        if (!id) return null;
+        return [{ rootPC: id.rootPC, quality: id.voiceAs, bassPc: pc(notes[0]), notes }];
+      },
+      why: (c) => {
+        const sorted = [...c.prevNotes].sort((a, b) => a - b);
+        const id = identify([sorted[0] - 1, ...sorted.slice(1)]);
+        return 'everything holds but the bass, which slips down a half step — ' +
+               `and the chord becomes ${id ? chordName(id.rootPC, id.suffix) : 'something new'}`;
       },
     },
 
@@ -1797,7 +1863,7 @@
                    `${noteName(c.root + 8, false)}→${noteName(c.root + 9, false)} underneath it`,
     },
     {
-      id: 'modal-oscillation-up', slot: 'ascending',
+      id: 'modal-oscillation-up', slot: 'sonority',
       label: 'Modal shift up a step',
       roman: 'I6/9 ⇄ ii11',
       applies: c => isMajorish(c.quality),
@@ -1911,7 +1977,7 @@
       why:    c => `the 4th falls to the 3rd — then it resolves to ${noteName(c.root + 5, false)}`,
     },
     {
-      id: 'sus-hang', slot: 'colour', label: 'Suspended, unresolved', weight: 0,
+      id: 'sus-hang', slot: 'sonority', label: 'Suspended, unresolved', weight: 0,
       roman: 'V7sus4 (unresolved)',
       applies: c => (QUALITIES[c.quality] || {}).family === 'sus',
       chords: c => [{ rootPC: pc(c.root + 5), quality: '7sus4' }],
@@ -1973,7 +2039,7 @@
       why:    c => `${noteName(c.root + 6, false)}7 shares its guide tones — same resolution, chromatic bass`,
     },
     {
-      id: 'modal-oscillation-down', slot: 'colour', label: 'Modal shift down a step',
+      id: 'modal-oscillation-down', slot: 'sonority', label: 'Modal shift down a step',
       roman: 'ii11 → I6/9',
       applies: c => c.quality === 'm11' || c.quality === 'm9' || c.quality === 'm7',
       chords: c => [{ rootPC: pc(c.root + 10), quality: '6/9' }],
@@ -2018,7 +2084,7 @@
         root: id.rootPC,
         q:    id.voiceAs,
         bassPc: pc(moved),
-        slot: 'colour',
+        slot: 'sonority',
         family: 'sonority',
         device: 'chromatic-sonority',
         roman: '—',
@@ -2037,13 +2103,37 @@
   function realizeDevice(device, ctx, spice, shape) {
     let chords;
     try { chords = device.chords(ctx); } catch (_) { return null; }
-    if (!chords || !chords.length) return null;
+    if (!chords || !chords.length || chords.some(ch => !ch)) return null;
     if (chords.some(ch => !QUALITIES[ch.quality])) return null;
 
     const sequence = [];
     let from = ctx.prevNotes || [];
 
     for (const ch of chords) {
+      // A spec carrying its own `notes` keeps that exact voicing. Some devices
+      // ARE a voicing — hold these tones, move that one — and re-voicing them
+      // would destroy the move they exist to teach.
+      if (ch.notes) {
+        const prev  = from;
+        const held  = ch.notes.filter(n => prev.includes(n)).map(n => ({ from: n, to: n }));
+        const gone  = prev.filter(n => !ch.notes.includes(n));
+        const came  = ch.notes.filter(n => !prev.includes(n));
+        const moved = (gone.length && came.length)
+          ? [{ from: Math.min(...gone), to: Math.min(...came) }] : [];
+        sequence.push({
+          rootPC: ch.rootPC, quality: ch.quality, bassPc: ch.bassPc ?? null,
+          notes: [...ch.notes].sort((a, b) => a - b),
+          mapping: {
+            held, moved,
+            appeared: came.filter(n => !moved.some(m => m.to === n)).map(to => ({ to })),
+            released: gone.filter(n => !moved.some(m => m.from === n)).map(from => ({ from })),
+          },
+          name: chordName(ch.rootPC, ch.quality, ch.bassPc),
+        });
+        from = ch.notes;
+        continue;
+      }
+
       // The dial gates the chord, not just its extensions: at "basic" a device
       // asking for 7alt gets a plain 7 instead of being dropped, so the MOVE
       // still works — just without the colour.
@@ -2125,6 +2215,7 @@
       degree:  keyTonic == null ? null : pc(root - keyTonic),
       atTonic: keyTonic == null || pc(root - keyTonic) === 0,
       prevNotes: prevNotes || [], prevBassPc,
+      spice: spice == null ? 1 : spice,
     };
 
     // ── 1. Devices first — the hard-wired theory ──
@@ -2158,7 +2249,7 @@
     }
 
     // Non-functional sonorities compete for the Far slot on common tones alone.
-    for (const s of chromaticSonorities(prevNotes)) {
+    for (const s of ((spice == null ? 1 : spice) >= 1 ? chromaticSonorities(prevNotes) : [])) {
       // Gate by the dial like everything else — a sonority found by ear still
       // gets plainened when the player asked for basic harmony.
       s.q = atSpice(s.q, spice);
@@ -2332,7 +2423,7 @@
 
   const api = {
     // vocabulary
-    QUALITIES, PATTERNS, SHAPES,
+    QUALITIES, PATTERNS, SHAPES, SLOTS,
     // spelling
     SHARP_ROOT_PCS, SHARP_NAMES, FLAT_NAMES,
     noteName, spell, midiName, glyphs, chordName,

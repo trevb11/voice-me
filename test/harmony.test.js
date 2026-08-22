@@ -935,6 +935,58 @@ check('a reinterpretation branch is labelled in the key it argues for', () => {
   return bad;
 });
 
+// Every other functional device walks the cycle of fifths DOWNWARD, because
+// that is where cadences live. The move UP a fifth had no device at all, so
+// Dm never offered Am — i→v in minor and ii→vi in major, both everyday moves.
+check('REGRESSION: the chord a fifth above is reachable', () => {
+  const bad = [];
+  for (let tonic = 0; tonic < 12; tonic++) {
+    // i → v in a minor key
+    const iNotes = H.voice(tonic, 'm7', { spice: 1, shape: 'closed' });
+    const minor  = H.suggest(iNotes, tonic, 'm7', [], 1, 'closed', { tonicPc: tonic, mode: 'minor' });
+    const v = (tonic + 7) % 12;
+    if (!minor.branches.some(b => b.sequence.some(s => s.rootPC === v))) {
+      bad.push(`${NM[tonic]} minor: i never offers its v (${NM[v]}) — ` +
+               minor.branches.map(b => b.name).join(' | '));
+    }
+
+    // ii → vi in a major key
+    const iiRoot = (tonic + 2) % 12;
+    const iiNotes = H.voice(iiRoot, 'm7', { spice: 1, shape: 'closed' });
+    const major = H.suggest(iiNotes, iiRoot, 'm7', [], 1, 'closed', { tonicPc: tonic, mode: 'major' });
+    const vi = (tonic + 9) % 12;
+    if (!major.branches.some(b => b.sequence.some(s => s.rootPC === vi))) {
+      bad.push(`${NM[tonic]} major: ii never offers vi (${NM[vi]}) — ` +
+               major.branches.map(b => b.name).join(' | '));
+    }
+  }
+  return bad;
+});
+
+check('the fifth-up move stays inside the key', () => {
+  const bad = [];
+  const scale = { major: [0,2,4,5,7,9,11], minor: [0,2,3,5,7,8,10] };
+  for (let tonic = 0; tonic < 12; tonic++) {
+    for (const mode of ['major', 'minor']) {
+      for (const deg of scale[mode]) {
+        const root = (tonic + deg) % 12;
+        const q = mode === 'major'
+          ? ([0,5].includes(deg) ? 'maj7' : deg === 7 ? '7' : deg === 11 ? 'm7b5' : 'm7')
+          : ([3,8].includes(deg) ? 'maj7' : deg === 10 ? '7' : deg === 2 ? 'm7b5' : 'm7');
+        const notes = H.voice(root, q, { spice: 1, shape: 'closed' });
+        const r = H.suggest(notes, root, q, [], 1, 'closed', { tonicPc: tonic, mode });
+        const b = r.branches.find(x => x.device === 'diatonic-fifth-up');
+        if (!b) continue;
+        const landed = ((b.sequence[0].rootPC - tonic) % 12 + 12) % 12;
+        if (!scale[mode].includes(landed)) {
+          bad.push(`${NM[tonic]} ${mode}, from ${NM[root]}${q}: lands on ${NM[b.sequence[0].rootPC]}, outside the key`);
+        }
+      }
+    }
+  }
+  return bad;
+});
+
 check('the V chord of a declared key is offered its I', () => {
   const bad = [];
   for (let tonic = 0; tonic < 12; tonic++) {

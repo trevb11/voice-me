@@ -1597,6 +1597,26 @@
       why: c => `a dominant wants to fall a fifth — hear ${noteName(c.root + 5, false)} as home`,
     },
 
+    {
+      // Dm → Am. Every other functional device here walks the cycle of fifths
+      // DOWNWARD — ii→V, vi→ii, i→iv — because that is where cadences live. But
+      // the move up a fifth is just as common and had no device at all: i→v is
+      // the backbone of modal and folk minor, and ii→vi turns up constantly in
+      // songwriting. One diatonic step of four scale degrees covers both.
+      id: 'diatonic-fifth-up', slot: 'colour', weight: 4,
+      label: 'Up a fifth',
+      roman: 'i → v',
+      applies: c => c.keyKnown,
+      chords: (c) => {
+        const up = diatonicStep(c.keyTonic, c.keyMode, c.degree, 4);
+        return [{ rootPC: up.rootPC, quality: up.quality }];
+      },
+      why: (c) => {
+        const up = diatonicStep(c.keyTonic, c.keyMode, c.degree, 4);
+        return `up a fifth to ${noteName(up.rootPC, false)} — the same key, seen from its dominant side`;
+      },
+    },
+
     // ── Diatonic passing moves, aimed at chords that belong to the key ───
     {
       id: 'diatonic-passing-dim-up', slot: 'ascending', weight: 5,

@@ -307,12 +307,18 @@
   // How readily a voice may be dropped when a shape asks for fewer voices.
   // 0 never. Guide tones define the chord; the 5th is the first thing a jazz
   // pianist lets go of, and on a dominant it is the *first* thing to go.
-  function dropRank(role, def) {
+  function dropRank(role, def, fromCore) {
     if (role === '3rd' || role === '4th' || role === '7th' || role === '6th') return 0;
     if (role === 'root') return 1;
     // A ♭5 or ♯5 IS the chord's identity — dropping it turns m7♭5 into m7.
     if (role === '5th') return def.rigid5 ? 0 : (def.family === 'dominant' ? 5 : 4);
-    return 2;   // colour: 9ths, 11ths, 13ths, alterations
+
+    // A colour that is named in the chord symbol is part of what the chord IS,
+    // and lives in `core` for exactly that reason. Trimming it makes the name a
+    // lie: C6/9 came out as C E A, Cm9 as C E♭ B♭, C7♭9 with no ♭9 at all. A
+    // colour the engine merely VOLUNTEERED (from `ext`) can still go.
+    if (fromCore) return 0;
+    return 2;   // volunteered colour: 9ths, 11ths, 13ths, alterations
   }
 
   const ALTERED_9_ROLES = new Set(['♭9', '♯9']);
@@ -396,9 +402,9 @@
     const s   = spice == null ? 1 : spice;
     const root = pc(rootPC);
 
-    const tones = def.core.map(([iv, role]) => ({ iv, role }));
+    const tones = def.core.map(([iv, role]) => ({ iv, role, fromCore: true }));
     for (const [iv, role, tier] of (def.ext || [])) {
-      if (tier <= s) tones.push({ iv, role });
+      if (tier <= s) tones.push({ iv, role, fromCore: false });
     }
 
     // ── Jazz rules, enforced here so no data edit can violate them ──
@@ -422,7 +428,8 @@
       if (seen.has(p)) return false;
       seen.add(p);
       return true;
-    }).map(t => ({ pc: pc(root + t.iv), iv: t.iv % 12, role: t.role, rank: dropRank(t.role, def) }));
+    }).map(t => ({ pc: pc(root + t.iv), iv: t.iv % 12, role: t.role,
+                   rank: dropRank(t.role, def, t.fromCore) }));
   }
 
   // ═════════════════════════════════════════════════════════════════════════
@@ -576,7 +583,12 @@
     const notes = [bass];
     for (const t of upper) {
       let m = above(t.pc, cursor);
-      while (m - cursor < minGap) m += 12;
+      // Enforce the gap only down low, where tightness is actually muddy.
+      // Applied all the way up, a shape with a wide minimum gap kicks each
+      // tone that lands too close up a whole octave, and the displacement
+      // compounds: C13 at `minimal` stacked out to C3–B♭6, forty-six semitones
+      // and unplayable. Higher up, close spacing is a voicing, not a problem.
+      while (m - cursor < minGap && cursor < 52 && m + 12 <= KEY_HI) m += 12;
       if (m > KEY_HI) m -= 12;
       notes.push(m);
       cursor = m;
@@ -754,6 +766,28 @@
     if (bi !== -1) upperPCs.splice(bi, 1);
 
     const prevUpper = sorted.slice(1);
+
+    // ── Give every voice somewhere to go ──
+    //
+    // A triad has three tones. Play a five-note A♭ and move to one, and two
+    // voices had nothing to land on and were simply released — you played five
+    // notes and got three back. Pad the target with octave doublings so the
+    // texture survives the change.
+    //
+    // Only the stable tones get doubled: root and 5th, which is what a pianist
+    // doubles. Doubling a 7th or a tension gives you two of a note that wanted
+    // to resolve.
+    if (prevUpper.length > upperPCs.length && upperPCs.length) {
+      const stable = tones.filter(t => t.role === 'root' || t.role === '5th')
+                          .map(t => t.pc)
+                          .filter(p => p !== bassPC);
+      const fill = stable.length ? stable : upperPCs.slice();
+      let i = 0;
+      while (prevUpper.length > upperPCs.length && i < 12) {
+        upperPCs.push(fill[i % fill.length]);
+        i++;
+      }
+    }
 
     // Doublings are deliberately NOT forced to move in parallel here.
     //
@@ -2171,8 +2205,18 @@
       if (QUALITIES[q].family !== fam) continue;
       if (QUALITIES[q].triad !== QUALITIES[quality].triad) continue;
       if (tierOf(q) > max) continue;
-      const r = lead(prevNotes || [], rootPC, q, { spice, shape });
+
+      // Voiced at spice 0 — CORE tones only — so each variant shows exactly
+      // what its name promises and nothing else. At the dial's own spice the
+      // menu was useless: "Complex" volunteers the 9th and 11th onto m7 as
+      // well, so F♯m7, F♯m9 and F♯m11 all came out as the same five notes.
+      // The point of the menu is that the entries differ.
+      const r = lead(prevNotes || [], rootPC, q, { spice: 0, shape });
       if (!r.notes || r.notes.length < 2) continue;
+
+      const pcs = [...new Set(r.notes.map(pc))].sort((a, b) => a - b).join(',');
+      if (out.some(v => v.pcs === pcs)) continue;   // no duplicate voicings
+
       out.push({
         quality: q,
         tier:    tierOf(q),
@@ -2180,6 +2224,7 @@
         notes:   r.notes,
         mapping: r.mapping,
         current: q === quality,
+        pcs,
       });
     }
     return out.sort((a, b) => a.tier - b.tier || a.quality.length - b.quality.length);

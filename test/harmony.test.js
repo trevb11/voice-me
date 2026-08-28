@@ -277,14 +277,22 @@ check('REGRESSION: a ♭9 falls a half step instead of leaping an octave', () =>
 // nominal count trims a tone out of the TARGET, which strands a voice that had
 // somewhere perfectly good to go: Db9 → G♭maj7 dropped the 5th, so the E♭ that
 // wanted to fall a whole step onto D♭ was simply released instead.
-check('REGRESSION: the voice count follows the player\'s hands', () => {
+check('REGRESSION: no voice is dropped for want of somewhere to go', () => {
   const bad = [];
   for (const { root, notes } of humanVoicings().slice(0, 300)) {
     for (const q of ['maj7', 'm7', '7', '9', 'm9', '13']) {
       const r = H.lead(notes, (root + 5) % 12, q, { spice: 1, shape: 'closed' });
-      if (r.notes.length !== notes.length) {
-        bad.push(`held ${notes.length} notes, got ${r.notes.length} back ` +
+      // Never FEWER — that was the bug: play five notes, get three back. More
+      // is allowed, because some chords need more to exist at all: every tone
+      // named in "13" is essential, so a 13 chord is five voices even when you
+      // came from four.
+      if (r.notes.length < notes.length) {
+        bad.push(`held ${notes.length} notes, got only ${r.notes.length} back ` +
                  `(${NM[(root + 5) % 12]}${q} from ${notes.map(nm).join(' ')})`);
+      }
+      if (r.notes.length > notes.length + 2) {
+        bad.push(`held ${notes.length} notes, got ${r.notes.length} back — too many ` +
+                 `(${NM[(root + 5) % 12]}${q})`);
       }
     }
   }

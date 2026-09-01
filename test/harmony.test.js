@@ -1161,6 +1161,39 @@ check('no double accidentals reach the staff', () => {
   return bad;
 });
 
+check('chord names follow the key, not a fixed sharp/flat table', () => {
+  const bad = [];
+  const cases = [
+    // The vi of A major is F♯m7. The fixed table spelled D E G A B sharp and
+    // everything else flat, so it came out G♭m7 — a note A major does not own.
+    [6, 'm7',   null, { tonicPc: 9, mode: 'major' }, 'F♯m7'],
+    [9, 'maj7', 8,    { tonicPc: 9, mode: 'major' }, 'Amaj7/G♯'],
+    // A minor key borrows its relative major's signature.
+    [6, 'm7',   null, { tonicPc: 6, mode: 'minor' }, 'F♯m7'],
+    // Flat keys still spell flat.
+    [6, 'm7',   null, { tonicPc: 3, mode: 'major' }, 'G♭m7'],
+    [1, 'maj7', null, { tonicPc: 3, mode: 'major' }, 'D♭maj7'],
+    // C has no flats: the ascending passing chord is C♯dim7, not D♭dim7.
+    [1, 'dim7', null, { tonicPc: 0, mode: 'major' }, 'C♯dim7'],
+  ];
+  for (const [root, q, bass, key, want] of cases) {
+    const got = H.chordName(root, q, bass, key);
+    if (got !== want) bad.push(`${want} expected, got ${got}`);
+  }
+  return bad;
+});
+
+check('an unknown key still spells every chord', () => {
+  const bad = [];
+  for (const root of ROOTS) for (const q of QUALS) {
+    for (const key of [null, undefined, {}, { tonicPc: null }]) {
+      const n = H.chordName(root, q, null, key);
+      if (!n || /undefined|NaN/.test(n)) bad.push(`${root}${q} with ${JSON.stringify(key)} → ${n}`);
+    }
+  }
+  return bad;
+});
+
 // ── Report ──────────────────────────────────────────────────────────────────
 
 console.log('');

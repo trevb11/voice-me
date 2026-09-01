@@ -166,6 +166,20 @@ arrived in. Diatonic passing moves (`diatonicStep()`) also use the key, so a
 passing chord lands on something that belongs there — `Gm9` in F passes up to
 `Am7` (iii), not the `Am7♭5` you get from treating Gm as a tonic.
 
+**Chord names follow the key too.** `chordName(rootPC, quality, bassPc, key)`
+asks `keyUsesFlats()`, which is a property of the key signature — the six flat
+majors in `FLAT_KEYS`, with a minor key taking its relative major's signature.
+Everything else spells sharp, **C included**: the ascending passing chord in C
+is `C♯dim7`, not `D♭dim7`. Without a key it falls back to the fixed
+`SHARP_ROOT_PCS` table, which is why the vi of A major used to read `G♭m7` and
+its slash bass `A♭` — notes A major does not contain. A modulating device is
+spelled in the key it *lands* in, for the same reason `romanPath()` numbers it
+there.
+
+This is the chord *symbol*. Individual noteheads on the staff are a separate
+question — see Notation — because a note is spelled by its interval function,
+which the key does not override.
+
 ## Devices
 
 Branches are **named harmonic moves**, not scoring winners. Search only breaks

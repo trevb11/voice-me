@@ -53,8 +53,11 @@ function generateBranches(chord) {
   return result.branches;
 }
 
+// Spelled in whatever key the tree is currently reasoning in, so the vi of A
+// major reads F♯m7 rather than G♭m7. `compose.key` covers both the declared
+// key and the one inference settled on.
 function chordNameOf(rootPC, quality, bassPc) {
-  return Harmony.chordName(rootPC, quality, bassPc);
+  return Harmony.chordName(rootPC, quality, bassPc, compose.key);
 }
 
 // ── Reading what the player played ─────────────────────────────────────────

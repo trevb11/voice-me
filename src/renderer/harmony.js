@@ -1059,12 +1059,37 @@
   }
 
   // Display name for a root + canonical quality, with an optional slash bass.
-  function chordName(rootPC, quality, bassPc) {
-    const useSharp = SHARP_ROOT_PCS.has(pc(rootPC));
-    let name = noteName(rootPC, useSharp) + quality;
-    if (bassPc != null && pc(bassPc) !== pc(rootPC)) {
-      name += '/' + noteName(bassPc, SHARP_ROOT_PCS.has(pc(bassPc)));
-    }
+  // Major keys written with flats. Everything else takes sharps, C included —
+  // an ascending chromatic chord in C is C♯dim7, not D♭dim7.
+  const FLAT_KEYS = new Set([5, 10, 3, 8, 1, 6]);   // F B♭ E♭ A♭ D♭ G♭
+
+  /**
+   * Does this key write its accidentals as flats?
+   *
+   * A minor key takes its signature from the relative major a minor third
+   * above: F♯ minor is A major's signature, so it spells F♯ and G♯, never
+   * G♭ and A♭.
+   */
+  function keyUsesFlats(key) {
+    if (!key || key.tonicPc == null) return null;      // unknown — caller decides
+    const majorTonic = key.mode === 'minor' ? pc(key.tonicPc + 3) : pc(key.tonicPc);
+    return FLAT_KEYS.has(majorTonic);
+  }
+
+  /**
+   * Spell a chord root, following the key when one is known.
+   *
+   * Without a key this falls back to a fixed table — sharps for D E G A B —
+   * which is why the vi of A major came out as `G♭m7` instead of `F♯m7`, and
+   * its slash bass as `A♭` instead of `G♯`. A major has no flats in it at all.
+   */
+  function chordName(rootPC, quality, bassPc, key) {
+    const flats    = keyUsesFlats(key);
+    const spellPc  = p => (flats == null ? noteName(p, SHARP_ROOT_PCS.has(pc(p)))
+                                         : noteName(p, !flats));
+
+    let name = spellPc(rootPC) + quality;
+    if (bassPc != null && pc(bassPc) !== pc(rootPC)) name += '/' + spellPc(bassPc);
     return glyphs(name);
   }
 
@@ -1750,8 +1775,9 @@
       why: (c) => {
         const sorted = [...c.prevNotes].sort((a, b) => a - b);
         const id = identify([sorted[0] - 1, ...sorted.slice(1)]);
+        const key = c.keyTonic == null ? null : { tonicPc: c.keyTonic, mode: c.keyMode };
         return 'everything holds but the bass, which slips down a half step — ' +
-               `and the chord becomes ${id ? chordName(id.rootPC, id.suffix) : 'something new'}`;
+               `and the chord becomes ${id ? chordName(id.rootPC, id.suffix, null, key) : 'something new'}`;
       },
     },
 
@@ -2098,7 +2124,7 @@
    * natural 5 gives a different answer, and that difference is real music. An
    * engine working from the chord SYMBOL could never find these.
    */
-  function chromaticSonorities(prevNotes) {
+  function chromaticSonorities(prevNotes, key) {
     if (!prevNotes || prevNotes.length < 3) return [];
     const sorted = [...prevNotes].sort((a, b) => a - b);
     const bass   = sorted[0];
@@ -2124,7 +2150,7 @@
         roman: '—',
         common,
         reason: `chromatic sonority: the bass slides ${dir < 0 ? 'down' : 'up'} a half step and ` +
-                `${common} voices hold — it becomes ${chordName(id.rootPC, id.suffix)}`,
+                `${common} voices hold — it becomes ${chordName(id.rootPC, id.suffix, null, key)}`,
       });
     }
     return out;
@@ -2134,7 +2160,7 @@
    * Realize a device: voice each chord of its sequence in turn, each led from
    * the one before, so the whole move is playable as written.
    */
-  function realizeDevice(device, ctx, spice, shape) {
+  function realizeDevice(device, ctx, spice, shape, key) {
     let chords;
     try { chords = device.chords(ctx); } catch (_) { return null; }
     if (!chords || !chords.length || chords.some(ch => !ch)) return null;
@@ -2162,7 +2188,7 @@
             appeared: came.filter(n => !moved.some(m => m.to === n)).map(to => ({ to })),
             released: gone.filter(n => !moved.some(m => m.from === n)).map(from => ({ from })),
           },
-          name: chordName(ch.rootPC, ch.quality, ch.bassPc),
+          name: chordName(ch.rootPC, ch.quality, ch.bassPc, key),
         });
         from = ch.notes;
         continue;
@@ -2180,7 +2206,7 @@
         bassPc:  ch.bassPc ?? null,
         notes:   r.notes,
         mapping: r.mapping,
-        name:    chordName(ch.rootPC, quality, ch.bassPc),
+        name:    chordName(ch.rootPC, quality, ch.bassPc, key),
       });
       from = r.notes;
     }
@@ -2195,7 +2221,7 @@
    * allows and hands the rest back here, so hovering a branch can show the
    * shelf of options instead of burning four branches on one function.
    */
-  function variants(prevNotes, rootPC, quality, spice, shape) {
+  function variants(prevNotes, rootPC, quality, spice, shape, key) {
     const fam = (QUALITIES[quality] || {}).family;
     if (!fam) return [];
     const max = spice == null ? 1 : spice;
@@ -2220,7 +2246,7 @@
       out.push({
         quality: q,
         tier:    tierOf(q),
-        name:    chordName(rootPC, q),
+        name:    chordName(rootPC, q, null, key),
         notes:   r.notes,
         mapping: r.mapping,
         current: q === quality,
@@ -2270,20 +2296,25 @@
       try { ok = device.applies(ctx); } catch (_) { ok = false; }
       if (!ok) continue;
 
-      const sequence = realizeDevice(device, ctx, spice, shape);
+      // A modulating device is ARGUING for a different key, so spell its chords
+      // in the key it lands in — the same reasoning that makes romanPath measure
+      // its numerals there. Computed before the sequence, because the spelling
+      // depends on it.
+      let modulation = null;
+      if (device.modulatesTo) {
+        try { modulation = device.modulatesTo(ctx); } catch (_) { modulation = null; }
+      }
+      const spellKey = (modulation && modulation.tonicPc != null) ? modulation : key;
+
+      const sequence = realizeDevice(device, ctx, spice, shape, spellKey);
       if (!sequence) continue;
 
       const first = sequence[0];
       const held  = commonTones(prevNotes, first.notes);
       const bass  = bassMotionBonus(prevBassPc, { root: first.rootPC, q: first.quality, bassPc: first.bassPc }, keyTonic);
 
-      let modulation = null;
-      if (device.modulatesTo) {
-        try { modulation = device.modulatesTo(ctx); } catch (_) { modulation = null; }
-      }
-
       (bySlot[device.slot] = bySlot[device.slot] || []).push({
-        device, sequence, modulation,
+        device, sequence, modulation, spellKey,
         // Devices are all musically valid, so the score only breaks ties
         // between them. Common tones dominate: holding voices while the bass
         // moves is the sound we are actually after. `weight` lets a device
@@ -2294,7 +2325,7 @@
     }
 
     // Non-functional sonorities compete for the Far slot on common tones alone.
-    for (const s of ((spice == null ? 1 : spice) >= 1 ? chromaticSonorities(prevNotes) : [])) {
+    for (const s of ((spice == null ? 1 : spice) >= 1 ? chromaticSonorities(prevNotes, key) : [])) {
       // Gate by the dial like everything else — a sonority found by ear still
       // gets plainened when the player asked for basic harmony.
       s.q = atSpice(s.q, spice);
@@ -2305,8 +2336,8 @@
                   why: () => s.reason },
         sequence: [{ rootPC: s.root, quality: s.q, bassPc: s.bassPc,
                      notes: r.notes, mapping: r.mapping,
-                     name: chordName(s.root, s.q, s.bassPc) }],
-        variants: variants(prevNotes, s.root, s.q, spice, shape),
+                     name: chordName(s.root, s.q, s.bassPc, key) }],
+        variants: variants(prevNotes, s.root, s.q, spice, shape, key),
         score: s.common * 5,
         held: s.common, bassLabel: 'chromatic bass',
       });
@@ -2373,7 +2404,7 @@
           notes:   first.notes,
           mapping: first.mapping,
           // Same function, other colours — for the hover menu.
-          variants: pick.variants || variants(prevNotes, first.rootPC, first.quality, spice, shape),
+          variants: pick.variants || variants(prevNotes, first.rootPC, first.quality, spice, shape, pick.spellKey || key),
           // Where the whole device lands — this becomes the tree's new root.
           resolvesTo: last,
         });
@@ -2390,7 +2421,7 @@
       const one = {
         rootPC: alt.root, quality: alt.q, bassPc: alt.bassPc ?? null,
         notes: alt.voiced.notes, mapping: alt.voiced.mapping,
-        name: chordName(alt.root, alt.q, alt.bassPc),
+        name: chordName(alt.root, alt.q, alt.bassPc, key),
       };
       branches.push({
         slot, label,
@@ -2405,7 +2436,7 @@
         heldCount: commonTones(prevNotes, one.notes),
         rootPC: one.rootPC, quality: one.quality, bassPc: one.bassPc,
         notes: one.notes, mapping: one.mapping,
-        variants: variants(prevNotes, one.rootPC, one.quality, spice, shape),
+        variants: variants(prevNotes, one.rootPC, one.quality, spice, shape, key),
         resolvesTo: one,
       });
     }

@@ -19,7 +19,7 @@ staff, and suggests where to go next.
 
 ## Installing
 
-1. Open **Voice Me-0.1.0-beta.3-arm64.dmg** and drag **Voice Me** into Applications.
+1. Open **Voice Me-0.1.0-beta.4-arm64.dmg** and drag **Voice Me** into Applications.
 
 2. **The first launch will fail.** You'll see something like:
 

@@ -1,6 +1,6 @@
 {
   "name": "voice-me",
-  "version": "0.1.0-beta.3",
+  "version": "0.1.0-beta.4",
   "description": "MIDI keyboard visualizer and compositional AI assistant",
   "main": "src/main/main.js",
   "scripts": {

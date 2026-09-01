@@ -1,0 +1,584 @@
+<title>Voice Me Beta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+<style>
+  /* ── Tokens: light is the base, both dark states redefine only these ────── */
+  :root {
+    --ground:      #E7E9ED;
+    --surface:     #FFFFFF;
+    --surface-2:   #F0F2F5;
+    --ink:         #14181F;
+    --ink-2:       #3F4751;
+    --ink-3:       #6C7581;
+    --rule:        #D1D6DD;
+    --rule-soft:   #E0E4E9;
+    --brass:       #9A6614;
+    --brass-lit:   #B47F22;
+    --brass-wash:  #F3E8D2;
+
+    --cue-hold:    #2F6FB5;
+    --cue-press:   #C08820;
+    --cue-lift:    #9AA2AC;
+    --cue-ok:      #2C8455;
+
+    --key-white:   #FBFBFC;
+    --key-black:   #22272F;
+    --key-edge:    #AAB1BA;
+
+    --measure:     64ch;
+    --gutter:      10rem;
+    --gutter-gap:  3rem;
+
+    --display: "Fraunces", Georgia, "Times New Roman", serif;
+    --body:    "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #13171D;
+      --surface:     #1A2028;
+      --surface-2:   #222933;
+      --ink:         #E5E8ED;
+      --ink-2:       #B3BBC5;
+      --ink-3:       #838D99;
+      --rule:        #2D343F;
+      --rule-soft:   #242B34;
+      --brass:       #E0AC59;
+      --brass-lit:   #EFC079;
+      --brass-wash:  #33291A;
+
+      --cue-hold:    #5E9BDC;
+      --cue-press:   #E0B44E;
+      --cue-lift:    #767F8B;
+      --cue-ok:      #4FB37C;
+
+      --key-white:   #C9CED5;
+      --key-black:   #171C23;
+      --key-edge:    #4A525C;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #13171D;
+    --surface:     #1A2028;
+    --surface-2:   #222933;
+    --ink:         #E5E8ED;
+    --ink-2:       #B3BBC5;
+    --ink-3:       #838D99;
+    --rule:        #2D343F;
+    --rule-soft:   #242B34;
+    --brass:       #E0AC59;
+    --brass-lit:   #EFC079;
+    --brass-wash:  #33291A;
+
+    --cue-hold:    #5E9BDC;
+    --cue-press:   #E0B44E;
+    --cue-lift:    #767F8B;
+    --cue-ok:      #4FB37C;
+
+    --key-white:   #C9CED5;
+    --key-black:   #171C23;
+    --key-edge:    #4A525C;
+  }
+
+  /* ── Base ────────────────────────────────────────────────────────────────── */
+  body {
+    background: var(--ground);
+    color: var(--ink-2);
+    font-family: var(--body);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: calc(var(--gutter) + var(--gutter-gap) + var(--measure));
+    margin-inline: auto;
+    padding: clamp(2.5rem, 6vw, 5rem) clamp(1.25rem, 4vw, 2rem) 5rem;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(3rem, 6vw, 4.5rem);
+  }
+
+  h1, h2, h3 { color: var(--ink); text-wrap: balance; font-family: var(--display); }
+  p { margin: 0; }
+  a { color: var(--brass); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+  a:hover { color: var(--brass-lit); }
+  :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; border-radius: 2px; }
+
+  /* ── Hero ────────────────────────────────────────────────────────────────── */
+  .hero { display: flex; flex-direction: column; gap: 1.5rem; }
+
+  .hero h1 {
+    font-optical-sizing: auto;
+    font-variation-settings: "opsz" 120, "SOFT" 40;
+    font-weight: 600;
+    font-size: clamp(3rem, 10vw, 5.25rem);
+    line-height: 0.94;
+    letter-spacing: -0.025em;
+    margin: 0;
+  }
+  .hero h1 em {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--brass);
+  }
+
+  .stamp {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 0.9rem;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .stamp b {
+    font-weight: 500;
+    color: var(--brass);
+    border: 1px solid var(--brass);
+    border-radius: 2px;
+    padding: 0.15rem 0.5rem;
+  }
+  .stamp span { display: inline-flex; align-items: center; gap: 0.9rem; }
+  .stamp span::before {
+    content: "";
+    width: 1px; height: 0.85rem;
+    background: var(--rule);
+  }
+
+  .lede {
+    font-size: clamp(1.1rem, 2.4vw, 1.3rem);
+    line-height: 1.5;
+    max-width: 44ch;
+    color: var(--ink-2);
+  }
+
+  .from {
+    border-left: 2px solid var(--brass);
+    padding-left: 1.1rem;
+    max-width: var(--measure);
+    color: var(--ink-2);
+  }
+
+  /* ── Section scaffold ────────────────────────────────────────────────────── */
+  .section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.4rem; }
+  .section > * { min-width: 0; }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin: 0;
+  }
+
+  .section h2 {
+    font-size: clamp(1.5rem, 3.4vw, 1.95rem);
+    font-weight: 600;
+    font-variation-settings: "opsz" 60, "SOFT" 30;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+    margin: 0;
+  }
+
+  @media (min-width: 940px) {
+    .section {
+      grid-template-columns: var(--gutter) minmax(0, var(--measure));
+      column-gap: var(--gutter-gap);
+      row-gap: 1.4rem;
+    }
+    .section > * { grid-column: 2; }
+    .section > .eyebrow {
+      grid-column: 1;
+      grid-row: 1;
+      text-align: right;
+      padding-top: 0.7rem;
+    }
+    .section > h2 { grid-row: 1; }
+  }
+
+  /* ── Requirements ────────────────────────────────────────────────────────── */
+  .reqs { display: flex; flex-direction: column; gap: 0.85rem; margin: 0; padding: 0; list-style: none; }
+  .reqs li {
+    display: grid;
+    grid-template-columns: 1.6rem minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: baseline;
+  }
+  .reqs li::before {
+    content: "✓";
+    font-family: var(--mono);
+    color: var(--brass);
+    font-size: 0.9rem;
+  }
+  .reqs strong { color: var(--ink); font-weight: 600; }
+
+  /* ── Steps ───────────────────────────────────────────────────────────────── */
+  .steps { display: flex; flex-direction: column; gap: 2rem; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+  .step {
+    display: grid;
+    grid-template-columns: 2.2rem minmax(0, 1fr);
+    column-gap: 1rem;
+    row-gap: 0.9rem;
+    align-items: start;
+  }
+  .step::before {
+    counter-increment: step;
+    content: counter(step);
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 2.2rem;
+    text-align: center;
+    color: var(--brass);
+    background: var(--brass-wash);
+    border-radius: 50%;
+    width: 2.2rem; height: 2.2rem;
+    grid-row: 1;
+  }
+  .step > * { grid-column: 2; }
+  .step h3 {
+    font-size: 1.12rem;
+    font-weight: 600;
+    font-variation-settings: "opsz" 30, "SOFT" 20;
+    margin: 0;
+    padding-top: 0.28rem;
+    line-height: 1.35;
+  }
+  .step p + p { margin-top: 0.7rem; }
+
+  /* ── The Gatekeeper warning, quoted ──────────────────────────────────────── */
+  .quote {
+    background: var(--surface-2);
+    border: 1px solid var(--rule-soft);
+    border-radius: 3px;
+    padding: 1rem 1.15rem;
+    font-family: var(--display);
+    font-style: italic;
+    font-size: 1.02rem;
+    line-height: 1.45;
+    color: var(--ink);
+  }
+
+  /* ── Terminal command ────────────────────────────────────────────────────── */
+  .cmd {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .cmd-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.5rem 0.55rem 0.5rem 0.9rem;
+    border-bottom: 1px solid var(--rule-soft);
+    background: var(--surface-2);
+  }
+  .cmd-bar span {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .copy {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: var(--ink-2);
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease;
+  }
+  .copy:hover { color: var(--brass); border-color: var(--brass); }
+  .copy[data-done="1"] { color: var(--cue-ok); border-color: var(--cue-ok); }
+  .cmd pre {
+    margin: 0;
+    padding: 0.95rem 1rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    line-height: 1.6;
+    color: var(--ink);
+  }
+
+  .aside {
+    font-size: 0.94rem;
+    color: var(--ink-3);
+  }
+
+  /* ── Keyboard cue legend ─────────────────────────────────────────────────── */
+  .legend {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 1.35rem 1.35rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.15rem;
+  }
+  .kb-scroll { overflow-x: auto; }
+  .kb { display: block; width: 100%; min-width: 280px; max-width: 420px; height: auto; }
+  .cues { display: flex; flex-direction: column; gap: 0.7rem; margin: 0; padding: 0; }
+  .cues div {
+    display: grid;
+    grid-template-columns: 4.6rem minmax(0, 1fr);
+    gap: 0.9rem;
+    align-items: baseline;
+  }
+  .cues dt {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .cues dd { margin: 0; color: var(--ink-2); }
+  .c-hold  { color: var(--cue-hold); }
+  .c-press { color: var(--cue-press); }
+  .c-lift  { color: var(--cue-lift); }
+  .c-ok    { color: var(--cue-ok); }
+
+  /* ── Try list ────────────────────────────────────────────────────────────── */
+  .try { display: flex; flex-direction: column; gap: 1.35rem; margin: 0; padding: 0; list-style: none; }
+  .try li { display: flex; flex-direction: column; gap: 0.3rem; }
+  .try h3 {
+    font-family: var(--body);
+    font-size: 0.97rem;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    margin: 0;
+  }
+
+  /* ── Chord chips ─────────────────────────────────────────────────────────── */
+  .chord {
+    font-family: var(--display);
+    font-variation-settings: "opsz" 20, "SOFT" 20;
+    font-weight: 600;
+    font-size: 0.97em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .was { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+  /* ── Beta 4 callout ──────────────────────────────────────────────────────── */
+  .new {
+    background: var(--brass-wash);
+    border-radius: 4px;
+    padding: 1.3rem 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+  .new .eyebrow { color: var(--brass); }
+
+  /* ── Plain bullet lists ──────────────────────────────────────────────────── */
+  ul.plain { display: flex; flex-direction: column; gap: 0.7rem; margin: 0; padding: 0; list-style: none; }
+  ul.plain li {
+    display: grid;
+    grid-template-columns: 0.85rem minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: baseline;
+  }
+  ul.plain li::before { content: "—"; color: var(--brass); font-family: var(--mono); font-size: 0.75rem; }
+
+  /* ── Footer ──────────────────────────────────────────────────────────────── */
+  .foot {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    font-size: 0.9rem;
+    color: var(--ink-3);
+  }
+  .foot strong { color: var(--ink-2); font-weight: 600; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+</style>
+
+<div class="page">
+
+  <header class="hero">
+    <div class="stamp">
+      <b>Beta 4</b>
+      <span>macOS · Apple Silicon</span>
+      <span>MIDI keyboard required</span>
+    </div>
+    <h1>Voice&nbsp;Me<br><em>a harmony teacher</em></h1>
+    <p class="lede">Your compositional exploratory tool.</p>
+    <p class="from">Voice Me is complete with an instructional voicings library, compositional assistant, and grand staff.</p>
+  </header>
+
+  <section class="section">
+    <p class="eyebrow">Before you start</p>
+    <h2>What you'll need</h2>
+    <ul class="reqs">
+      <li><span><strong>A Mac with Apple Silicon</strong> — M1 or later, running macOS 12 or newer.</span></li>
+      <li><span><strong>A MIDI keyboard over USB.</strong> Plug it in before you launch. No drivers needed for most keyboards.</span></li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <p class="eyebrow">Installing</p>
+    <h2>Four steps, one of them alarming</h2>
+
+    <ol class="steps">
+      <li class="step">
+        <h3>Open the DMG and drag Voice&nbsp;Me into Applications.</h3>
+        <p>The usual window with the arrow. Nothing unusual here.</p>
+      </li>
+
+      <li class="step">
+        <h3>Clear the quarantine flag in Terminal.</h3>
+        <p>Open Terminal — press ⌘-Space, type “Terminal”, hit Return — then paste this and hit Return again.</p>
+        <div class="cmd">
+          <div class="cmd-bar">
+            <span>Terminal</span>
+            <button class="copy" type="button" data-cmd>Copy</button>
+          </div>
+          <pre><code id="xattr">xattr -dr com.apple.quarantine "/Applications/Voice Me.app"</code></pre>
+        </div>
+      </li>
+
+      <li class="step">
+        <h3>Open Voice&nbsp;Me normally.</h3>
+      </li>
+    </ol>
+  </section>
+
+  <section class="section">
+    <p class="eyebrow">First run</p>
+    <h2>Getting started</h2>
+    <p>Top left you should see a green dot and your keyboard's name. If it says <em>No MIDI device</em>, hit the <strong>↺</strong> button or pick your keyboard from the dropdown.</p>
+    <p><strong>Then just play.</strong> Keys light up as you press them, the chord name appears at the bottom, and the staff fills in. Turn on the Rhodes with the <strong>○ Sound</strong> button at the top right — it takes a moment to load the samples the first time.</p>
+    <p><strong>Compose with me</strong> is the interesting part. Press the button at the top, play any chord, and a tree grows with suggestions — each one a named harmonic move with its roman numerals above it. A passing diminished, a secondary dominant, a modal shift.</p>
+  </section>
+
+  <section class="section">
+    <p class="eyebrow">Reading the keyboard</p>
+    <h2>What the colours are telling you</h2>
+    <p>Click a branch and the on-screen keyboard tells your hands what to do.</p>
+
+    <div class="legend">
+      <div class="kb-scroll">
+        <svg class="kb" viewBox="0 0 262 126" role="img" aria-label="Keyboard showing two held notes in blue, two notes to press in gold, and one to release in grey.">
+          <g stroke="var(--key-edge)" stroke-width="1">
+            <rect x="0.5"   y="0.5" width="25" height="112" rx="2" fill="var(--cue-hold)"/>
+            <rect x="26.5"  y="0.5" width="25" height="112" rx="2" fill="var(--key-white)"/>
+            <rect x="52.5"  y="0.5" width="25" height="112" rx="2" fill="var(--cue-hold)"/>
+            <rect x="78.5"  y="0.5" width="25" height="112" rx="2" fill="var(--key-white)"/>
+            <rect x="104.5" y="0.5" width="25" height="112" rx="2" fill="var(--cue-press)"/>
+            <rect x="130.5" y="0.5" width="25" height="112" rx="2" fill="var(--key-white)"/>
+            <rect x="156.5" y="0.5" width="25" height="112" rx="2" fill="var(--cue-lift)"/>
+            <rect x="182.5" y="0.5" width="25" height="112" rx="2" fill="var(--key-white)"/>
+            <rect x="208.5" y="0.5" width="25" height="112" rx="2" fill="var(--key-white)"/>
+            <rect x="234.5" y="0.5" width="25" height="112" rx="2" fill="var(--key-white)"/>
+          </g>
+          <g stroke="var(--key-black)" stroke-width="1">
+            <rect x="18"  y="0" width="16" height="70" rx="2" fill="var(--key-black)"/>
+            <rect x="44"  y="0" width="16" height="70" rx="2" fill="var(--key-black)"/>
+            <rect x="96"  y="0" width="16" height="70" rx="2" fill="var(--cue-press)"/>
+            <rect x="122" y="0" width="16" height="70" rx="2" fill="var(--key-black)"/>
+            <rect x="148" y="0" width="16" height="70" rx="2" fill="var(--key-black)"/>
+            <rect x="200" y="0" width="16" height="70" rx="2" fill="var(--key-black)"/>
+            <rect x="226" y="0" width="16" height="70" rx="2" fill="var(--key-black)"/>
+          </g>
+          <g font-family="IBM Plex Mono, monospace" font-size="9" fill="var(--ink-3)" text-anchor="middle">
+            <text x="13"  y="124">hold</text>
+            <text x="65"  y="124">hold</text>
+            <text x="112" y="124">press</text>
+            <text x="169" y="124">lift</text>
+          </g>
+        </svg>
+      </div>
+
+      <dl class="cues">
+        <div><dt class="c-hold">Blue</dt><dd>keep holding this one — it's in the next chord too</dd></div>
+        <div><dt class="c-press">Gold</dt><dd>press this</dd></div>
+        <div><dt class="c-lift">Grey</dt><dd>let this one go</dd></div>
+        <div><dt class="c-ok">Green flash</dt><dd>you got it</dd></div>
+      </dl>
+    </div>
+
+    <p>Some suggestions are <strong>two chords</strong>, because the move is the lesson. <span class="chord">A7/C♯ → Dm7</span> is teaching the bass walking C–C♯–D, and the first chord on its own teaches nothing. It'll walk you through both.</p>
+  </section>
+
+  <section class="section">
+    <p class="eyebrow">Worth trying</p>
+    <ul class="try">
+      <li>
+        <h3>The Basic / Colorful / Complex dial</h3>
+        <p>Changes how spicy the suggestions get. Basic sticks to triads and plain sevenths; Complex will offer you altered dominants.</p>
+      </li>
+      <li>
+        <h3>Set the key</h3>
+        <p>This is the one that changes the most. Play a <span class="chord">Gm9</span> on <em>auto</em> and the app has no way to know whether you mean i in G minor or ii in F, so it hedges. Tell it F major and every branch reasons from there — <span class="chord">ii → V → I</span>, with passing chords that land inside the key. Some branches modulate; playing one moves the key centre for you.</p>
+      </li>
+      <li>
+        <h3>Hover a branch</h3>
+        <p>You'll get the other colourings of the same chord — <span class="chord">F7, F9, F13, F7♭9</span>. Same harmonic job, different clothes.</p>
+      </li>
+      <li>
+        <h3>Click any chord in the row under the piano</h3>
+        <p>It re-cues that voicing so you can get it under your fingers again. This doesn't undo anything — the tree stays where it is.</p>
+      </li>
+      <li>
+        <h3>Backspace and Escape</h3>
+        <p>Backspace removes the last move. Escape stops practising.</p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <p class="eyebrow">Feedback</p>
+    <h2>What I'd love to know</h2>
+    <ul class="plain">
+      <li>Does it name your chords correctly? Especially odd voicings, rootless left-hand shapes, anything with a slash bass.</li>
+      <li>Anything confusing, or any moment you didn't know what to do next.</li>
+      <li>Crashes, stuck notes, keys lighting up wrong.</li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <p>The Rhodes sound is <strong>jRhodes3d by Jeff Learman</strong>, a sampled 1977 Rhodes Mark I Stage 73, used under <a href="https://creativecommons.org/licenses/by-nc/4.0/">CC BY-NC 4.0</a>. Source: <a href="https://github.com/sfzinstruments/jlearman.jRhodes3d">github.com/sfzinstruments/jlearman.jRhodes3d</a></p>
+    <p>Voice Me itself is MIT licensed, built on Electron, Tone.js, VexFlow and node-midi.</p>
+    <p><strong>Anything you record with this is yours.</strong> The sample licence treats playing the instrument like playing a real one, commercial or not. The non-commercial part restricts me distributing the app, not you making music with it.</p>
+  </footer>
+
+</div>
+
+<script>
+  document.querySelector('[data-cmd]').addEventListener('click', async (e) => {
+    const btn  = e.currentTarget;
+    const text = document.getElementById('xattr').textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = 'Copied';
+      btn.dataset.done = '1';
+      setTimeout(() => { btn.textContent = 'Copy'; delete btn.dataset.done; }, 1800);
+    } catch (_) {
+      // Clipboard blocked — select it so ⌘C still works.
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById('xattr'));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      btn.textContent = 'Press ⌘C';
+    }
+  });
+</script>

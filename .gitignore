@@ -13,3 +13,6 @@ build/icon.iconset/
 dist/
 __pycache__/
 *.pyc
+
+# Machine-local Claude Code config — personal paths, not shared.
+.claude/settings.local.json

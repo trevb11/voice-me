@@ -166,6 +166,42 @@
     color: var(--ink-2);
   }
 
+  /* ── Download ────────────────────────────────────────────────────────────── */
+  .get {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.9rem 1.4rem;
+    margin-top: 0.4rem;
+  }
+  .dl {
+    display: inline-block;
+    background: var(--brass);
+    color: var(--surface);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    padding: 0.85rem 1.5rem;
+    border-radius: 3px;
+    border: 1px solid var(--brass);
+    transition: background 130ms ease, border-color 130ms ease;
+  }
+  .dl:hover {
+    background: var(--brass-lit);
+    border-color: var(--brass-lit);
+    color: var(--surface);
+  }
+  .dl-meta {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    line-height: 1.7;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
   /* ── Section scaffold ────────────────────────────────────────────────────── */
   .section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.4rem; }
   .section > * { min-width: 0; }
@@ -422,6 +458,13 @@
     <h1>Voice&nbsp;Me<br><em>a harmony teacher</em></h1>
     <p class="lede">Your compositional exploratory tool.</p>
     <p class="from">Voice Me is complete with an instructional voicings library, compositional assistant, and grand staff.</p>
+
+    <div class="get">
+      <a class="dl" href="https://github.com/trevb11/voice-me/releases/latest/download/VoiceMe-0.1.0-beta.4-arm64.dmg">
+        Download for macOS
+      </a>
+      <p class="dl-meta">Beta 4 · Apple Silicon · 130 MB<br>Read the install steps below before you open it.</p>
+    </div>
   </header>
 
   <section class="section">

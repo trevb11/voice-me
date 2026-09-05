@@ -273,7 +273,7 @@ needs.
 
 ## Testing
 
-`npm test` runs 62 invariants over every root × quality × spice × shape, plus
+`npm test` runs 66 invariants over every root × quality × spice × shape, plus
 realistic human voicings (close, shell, rootless) as voice-leading seeds. No
 framework.
 

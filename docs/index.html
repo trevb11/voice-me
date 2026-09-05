@@ -193,6 +193,18 @@
     border-color: var(--brass-lit);
     color: var(--surface);
   }
+  /* Intel is the minority case — outlined, so the two read as a pair without
+     asking anyone to weigh them equally. */
+  .dl-alt {
+    background: transparent;
+    color: var(--brass);
+    border-color: var(--brass);
+  }
+  .dl-alt:hover {
+    background: var(--brass-wash);
+    border-color: var(--brass-lit);
+    color: var(--brass-lit);
+  }
   .dl-meta {
     font-family: var(--mono);
     font-size: 0.7rem;
@@ -452,7 +464,7 @@
   <header class="hero">
     <div class="stamp">
       <b>Beta 4</b>
-      <span>macOS · Apple Silicon</span>
+      <span>macOS · Apple Silicon &amp; Intel</span>
       <span>MIDI keyboard required</span>
     </div>
     <h1>Voice&nbsp;Me<br><em>a harmony teacher</em></h1>
@@ -461,17 +473,21 @@
 
     <div class="get">
       <a class="dl" href="https://github.com/trevb11/voice-me/releases/latest/download/VoiceMe-0.1.0-beta.4-arm64.dmg">
-        Download for macOS
+        Apple Silicon
       </a>
-      <p class="dl-meta">Beta 4 · Apple Silicon · 130 MB<br>Read the install steps below before you open it.</p>
+      <a class="dl dl-alt" href="https://github.com/trevb11/voice-me/releases/latest/download/VoiceMe-0.1.0-beta.4-x64.dmg">
+        Intel
+      </a>
+      <p class="dl-meta">Beta 4 · ~130 MB<br>Not sure which? Apple menu ▸ About This Mac.</p>
     </div>
+    <p class="aside">Read the install steps below before you open it.</p>
   </header>
 
   <section class="section">
     <p class="eyebrow">Before you start</p>
     <h2>What you'll need</h2>
     <ul class="reqs">
-      <li><span><strong>A Mac with Apple Silicon</strong> — M1 or later, running macOS 12 or newer.</span></li>
+      <li><span><strong>A Mac running macOS 12 or newer</strong> — Apple Silicon or Intel, there's a build for each.</span></li>
       <li><span><strong>A MIDI keyboard over USB.</strong> Plug it in before you launch. No drivers needed for most keyboards.</span></li>
     </ul>
   </section>
